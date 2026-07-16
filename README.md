@@ -91,8 +91,9 @@ cp client/.env.example client/.env
 npm run dev                          # runs server (:6003) and client (:5173) together
 ```
 
-Visit http://localhost:5173. Admin login is at `/admin/login` using
-`ADMIN_USERNAME` / `ADMIN_PASSWORD` from `server/.env`.
+Visit http://localhost:5173. Admin login is at `/admin/login` (not linked from
+the public nav — it's for internal use only) using `ADMIN_USERNAME` /
+`ADMIN_PASSWORD` from `server/.env`.
 
 On first boot there are no publishers — sign in to `/admin`, set your
 global daily limit (defaults to 100,000), and add publishers with their own
@@ -112,6 +113,11 @@ See `server/.env.example` for the full list, notably:
 
 ## Notes & known limitations
 
+- Publishers can't see each other's names or upload activity: the home page
+  is a plain free-text field (no autocomplete/dropdown of existing
+  publishers), and there is no public API endpoint that lists publisher
+  names — only the JWT-protected admin API can. The upload endpoint still
+  validates the typed name server-side and rejects unrecognized publishers.
 - Admin auth is a single hardcoded account from env vars — sufficient for an
   internal tool, but swap in a real user store if multiple admins with
   different roles are ever needed.

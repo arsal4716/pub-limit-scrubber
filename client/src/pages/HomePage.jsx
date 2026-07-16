@@ -1,19 +1,12 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { fetchPublicPublishers } from "../api/publishers";
 import StateRestrictionNotice from "../components/StateRestrictionNotice.jsx";
 
 export default function HomePage() {
   const navigate = useNavigate();
   const [name, setName] = useState("");
-  const { data: publishers = [] } = useQuery({
-    queryKey: ["public-publishers"],
-    queryFn: fetchPublicPublishers,
-  });
 
   const trimmed = name.trim();
-  const matches = publishers.some((p) => p.name.toLowerCase() === trimmed.toLowerCase());
 
   function handleContinue(e) {
     e.preventDefault();
@@ -39,24 +32,13 @@ export default function HomePage() {
           </label>
           <input
             id="publisherName"
-            list="publisher-options"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Acme Leads"
+            placeholder="Enter your publisher name"
             className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            autoComplete="off"
             autoFocus
           />
-          <datalist id="publisher-options">
-            {publishers.map((p) => (
-              <option key={p.name} value={p.name} />
-            ))}
-          </datalist>
-          {trimmed && !matches && (
-            <p className="mt-2 text-xs text-amber-600">
-              We don't recognize this publisher yet. You can still continue, but the upload will be
-              rejected unless an admin has added "{trimmed}".
-            </p>
-          )}
         </div>
 
         <button

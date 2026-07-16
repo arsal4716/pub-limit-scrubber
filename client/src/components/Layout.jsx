@@ -14,11 +14,6 @@ export default function Layout() {
             Pub Limit Scrubber
           </Link>
           <nav className="flex items-center gap-4 text-sm">
-            {!isAdminArea && (
-              <Link to="/admin" className="text-slate-500 hover:text-slate-800">
-                Admin
-              </Link>
-            )}
             {isAdminArea && isAuthenticated && (
               <>
                 <span className="text-slate-400">{username}</span>
