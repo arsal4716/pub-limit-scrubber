@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useMutation } from "@tanstack/react-query";
+import { validatePublisher } from "../api/publishers";
 import StateRestrictionNotice from "../components/StateRestrictionNotice.jsx";
 
 export default function HomePage() {
@@ -8,11 +10,23 @@ export default function HomePage() {
 
   const trimmed = name.trim();
 
+  const validateMutation = useMutation({
+    mutationFn: () => validatePublisher(trimmed),
+    onSuccess: () => {
+      navigate(`/upload/${encodeURIComponent(trimmed)}`);
+    },
+  });
+
   function handleContinue(e) {
     e.preventDefault();
     if (!trimmed) return;
-    navigate(`/upload/${encodeURIComponent(trimmed)}`);
+    validateMutation.mutate();
   }
+
+  const notRecognized = validateMutation.isError;
+  const errorMessage =
+    validateMutation.error?.response?.data?.error ||
+    "We couldn't check that publisher right now. Please try again.";
 
   return (
     <div className="max-w-md mx-auto mt-12">
@@ -33,20 +47,28 @@ export default function HomePage() {
           <input
             id="publisherName"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              setName(e.target.value);
+              if (validateMutation.isError) validateMutation.reset();
+            }}
             placeholder="Enter your publisher name"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            className={`w-full rounded-lg border px-3 py-2.5 text-sm focus:outline-none focus:ring-2 ${
+              notRecognized
+                ? "border-red-300 focus:ring-red-500 focus:border-red-500"
+                : "border-slate-300 focus:ring-indigo-500 focus:border-indigo-500"
+            }`}
             autoComplete="off"
             autoFocus
           />
+          {notRecognized && <p className="mt-2 text-sm font-medium text-red-600">{errorMessage}</p>}
         </div>
 
         <button
           type="submit"
-          disabled={!trimmed}
+          disabled={!trimmed || validateMutation.isPending}
           className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          Continue to upload
+          {validateMutation.isPending ? "Checking..." : "Continue to upload"}
         </button>
       </form>
     </div>

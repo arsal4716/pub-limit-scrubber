@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { uploadScrubFile, fetchJobsForPublisher } from "../api/scrub";
+import { validatePublisher } from "../api/publishers";
 import JobStatusCard from "../components/JobStatusCard.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
 import StateRestrictionNotice from "../components/StateRestrictionNotice.jsx";
@@ -22,9 +23,23 @@ export default function UploadPage() {
   const [file, setFile] = useState(null);
   const [activeJobId, setActiveJobId] = useState(null);
 
+  const {
+    data: validation,
+    isLoading: isValidating,
+    isError: isInvalid,
+    error: validationError,
+  } = useQuery({
+    queryKey: ["validate-publisher", publisherName],
+    queryFn: () => validatePublisher(publisherName),
+    retry: false,
+  });
+
+  const isValid = validation?.valid === true;
+
   const { data: recentJobs = [], refetch: refetchRecent } = useQuery({
     queryKey: ["publisher-jobs", publisherName],
     queryFn: () => fetchJobsForPublisher(publisherName),
+    enabled: isValid,
   });
 
   const uploadMutation = useMutation({
@@ -62,29 +77,65 @@ export default function UploadPage() {
         </div>
       </div>
 
-      <form
-        onSubmit={handleSubmit}
-        className="rounded-xl border border-dashed border-slate-300 bg-white p-6 space-y-4"
-      >
-        <input
-          type="file"
-          accept=".csv,text/csv"
-          onChange={(e) => setFile(e.target.files?.[0] || null)}
-          className="block w-full text-sm text-slate-600 file:mr-4 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-indigo-700 hover:file:bg-indigo-100"
-        />
-        {uploadMutation.isError && (
-          <p className="text-sm text-red-600">
-            {uploadMutation.error?.response?.data?.error || "Upload failed. Please try again."}
+      {isValidating && <p className="text-sm text-slate-500">Checking publisher...</p>}
+
+      {isInvalid && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-5">
+          <p className="text-sm font-semibold text-red-700">
+            {validationError?.response?.data?.error ||
+              `"${publisherName}" is not a recognized publisher. Please contact an admin to get set up.`}
           </p>
-        )}
-        <button
-          type="submit"
-          disabled={!file || uploadMutation.isPending}
-          className="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          {uploadMutation.isPending ? "Uploading..." : "Upload & scrub"}
-        </button>
-      </form>
+          <Link
+            to="/"
+            className="mt-3 inline-block text-sm font-medium text-red-700 underline hover:text-red-800"
+          >
+            Go back and try a different name
+          </Link>
+        </div>
+      )}
+
+      {isValid && (
+        <>
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-5">
+            <p className="text-sm font-semibold text-indigo-900">
+              You can scrub up to {validation.remainingToday.toLocaleString()} lead
+              {validation.remainingToday === 1 ? "" : "s"} today.
+            </p>
+            <p className="mt-1 text-sm text-indigo-800">
+              Your daily limit is {validation.dailyLimit.toLocaleString()} leads
+              {validation.usedToday > 0 &&
+                ` (${validation.usedToday.toLocaleString()} already used today)`}
+              . Only your first {validation.remainingToday.toLocaleString()} unique, valid leads will
+              be sent to the buyer API — any additional leads in your file will be{" "}
+              <strong>skipped</strong> and marked "Skipped - Daily Limit Reached" in the output.
+            </p>
+          </div>
+
+          <form
+            onSubmit={handleSubmit}
+            className="rounded-xl border border-dashed border-slate-300 bg-white p-6 space-y-4"
+          >
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              onChange={(e) => setFile(e.target.files?.[0] || null)}
+              className="block w-full text-sm text-slate-600 file:mr-4 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-indigo-700 hover:file:bg-indigo-100"
+            />
+            {uploadMutation.isError && (
+              <p className="text-sm text-red-600">
+                {uploadMutation.error?.response?.data?.error || "Upload failed. Please try again."}
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={!file || uploadMutation.isPending}
+              className="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {uploadMutation.isPending ? "Uploading..." : "Upload & scrub"}
+            </button>
+          </form>
+        </>
+      )}
 
       {activeJobId && (
         <div>

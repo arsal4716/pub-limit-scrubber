@@ -6,11 +6,16 @@ admin dashboard for managing limits and reviewing scrub history.
 
 ## How it works
 
-1. A publisher visits the site, enters their publisher name, and uploads a
-   CSV lead file (any size — files are streamed, not loaded into memory).
-2. The server reads the file once to find every **unique, valid US phone
-   number**, in the order they first appear. Non-US-format phones are
-   marked invalid and never sent to the buyer API.
+1. A publisher visits the site and enters their publisher name. This is
+   validated against the admin-managed publisher list before they can move
+   on — an unrecognized or disabled name is blocked right there with a clear
+   error, and never reaches the upload step. Once validated, they see their
+   exact daily limit and how many leads they can still scrub today, with a
+   clear note that any leads beyond that will be skipped in the output.
+2. They upload a CSV lead file (any size — files are streamed, not loaded
+   into memory). The server reads the file once to find every **unique,
+   valid US phone number**, in the order they first appear. Non-US-format
+   phones are marked invalid and never sent to the buyer API.
 3. It reserves a slice of that publisher's remaining daily quota (and the
    global daily quota) — whichever is smaller — atomically, so two
    simultaneous uploads can never oversell either limit.
@@ -136,9 +141,12 @@ See `server/.env.example` for the full list, notably:
 
 - Publishers can't see each other's names or upload activity: the home page
   is a plain free-text field (no autocomplete/dropdown of existing
-  publishers), and there is no public API endpoint that lists publisher
-  names — only the JWT-protected admin API can. The upload endpoint still
-  validates the typed name server-side and rejects unrecognized publishers.
+  publishers), and the only public publisher-related endpoint
+  (`GET /api/publishers/validate?name=`) resolves one exact name at a time
+  and never returns a list — only the JWT-protected admin API can list every
+  publisher. Both the home page and the upload page call this endpoint to
+  gate progress and show the publisher their own daily limit; the upload
+  endpoint independently re-validates server-side regardless.
 - Admin auth is a single hardcoded account from env vars — sufficient for an
   internal tool, but swap in a real user store if multiple admins with
   different roles are ever needed.
