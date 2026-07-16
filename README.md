@@ -39,7 +39,9 @@ admin dashboard for managing limits and reviewing scrub history.
   counters, scrub job records.
 - **Express** — REST API (`server/`).
 - **React** (Vite + Tailwind + React Router + TanStack Query) — frontend
-  (`client/`).
+  (`server/client/`). In production the built frontend (`server/client/dist`)
+  is served by the same Express app on the same port — one process, one
+  port (`6003`), no CORS.
 - **Node.js** — a single in-process sequential job worker processes one
   upload at a time, which naturally respects the buyer API's global rate
   limit without needing Redis/BullMQ.
@@ -56,12 +58,14 @@ server/
     controllers/  request handlers
     routes/       Express routers
     middleware/   admin JWT auth, multer upload, error handler
-client/
-  src/
-    pages/            HomePage, UploadPage, StatusPage, admin/*
-    components/        shared UI + admin/* (publisher table, jobs table, etc.)
-    api/               axios wrappers per resource
-    context/           admin auth context
+    app.js        API routes + serves server/client/dist as static files,
+                  with an SPA fallback for client-side routes
+  client/         React app (Vite). `npm run build` here produces `dist/`,
+    src/          which server/src/app.js serves directly - single port.
+      pages/            HomePage, UploadPage, StatusPage, admin/*
+      components/        shared UI + admin/* (publisher table, jobs table, etc.)
+      api/               axios wrappers per resource
+      context/           admin auth context
 ```
 
 ## Buyer API contract
@@ -86,18 +90,35 @@ as long as your machine can download the MongoDB binary once).
 
 ```bash
 npm run install:all
-cp server/.env.example server/.env   # edit ADMIN_PASSWORD, BUYER_API_URL, etc.
-cp client/.env.example client/.env
-npm run dev                          # runs server (:6003) and client (:5173) together
+cp server/.env.example server/.env             # edit ADMIN_PASSWORD, BUYER_API_URL, etc.
+cp server/client/.env.example server/client/.env
+npm run dev                                     # runs server (:6003) and client (:5173) together
 ```
 
-Visit http://localhost:5173. Admin login is at `/admin/login` (not linked from
-the public nav — it's for internal use only) using `ADMIN_USERNAME` /
-`ADMIN_PASSWORD` from `server/.env`.
+Visit http://localhost:5173 (the Vite dev server, which proxies `/api` to
+`:6003` for hot-reloading during development). Admin login is at
+`/admin/login` (not linked from the public nav — it's for internal use only)
+using `ADMIN_USERNAME` / `ADMIN_PASSWORD` from `server/.env`.
 
 On first boot there are no publishers — sign in to `/admin`, set your
 global daily limit (defaults to 100,000), and add publishers with their own
 daily limits before anyone can upload a file for them.
+
+### Production: single port
+
+In production there's no separate frontend server — the React app is built
+once and Express serves the static files (plus an SPA fallback for
+client-side routes like `/upload/:publisherName`) from the same port as the
+API:
+
+```bash
+npm run install:all
+npm run build     # builds server/client -> server/client/dist
+npm start         # serves the API + the built frontend, both on :6003
+```
+
+Visit http://localhost:6003 for everything — no CORS, no second process,
+no separate origin to configure.
 
 ### Environment variables (`server/.env`)
 
