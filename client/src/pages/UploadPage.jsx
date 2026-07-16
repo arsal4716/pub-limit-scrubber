@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { uploadScrubFile, fetchJobsForPublisher } from "../api/scrub";
 import JobStatusCard from "../components/JobStatusCard.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
+import StateRestrictionNotice from "../components/StateRestrictionNotice.jsx";
 
 function recentJobsKey(publisherName) {
   return `recentJobs:${publisherName.toLowerCase()}`;
@@ -56,6 +57,9 @@ export default function UploadPage() {
           daily limit will be scrubbed — the rest are skipped and your original data is always kept
           in the output.
         </p>
+        <div className="mt-3">
+          <StateRestrictionNotice />
+        </div>
       </div>
 
       <form

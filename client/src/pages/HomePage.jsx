@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { fetchPublicPublishers } from "../api/publishers";
+import StateRestrictionNotice from "../components/StateRestrictionNotice.jsx";
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -27,6 +28,9 @@ export default function HomePage() {
         Enter your publisher name to get started. We'll scrub your file against the buyer API up to
         your daily lead limit.
       </p>
+      <div className="mt-4">
+        <StateRestrictionNotice />
+      </div>
 
       <form onSubmit={handleContinue} className="mt-8 space-y-4">
         <div>

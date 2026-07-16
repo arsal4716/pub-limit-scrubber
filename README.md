@@ -88,7 +88,7 @@ as long as your machine can download the MongoDB binary once).
 npm run install:all
 cp server/.env.example server/.env   # edit ADMIN_PASSWORD, BUYER_API_URL, etc.
 cp client/.env.example client/.env
-npm run dev                          # runs server (:5000) and client (:5173) together
+npm run dev                          # runs server (:6003) and client (:5173) together
 ```
 
 Visit http://localhost:5173. Admin login is at `/admin/login` using
