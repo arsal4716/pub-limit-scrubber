@@ -1,4 +1,11 @@
-require("dotenv").config();
+const path = require("path");
+
+// Load server/.env explicitly by path rather than relying on process.cwd() -
+// otherwise starting the server from a different working directory (e.g.
+// `node server/src/server.js` from the repo root) silently fails to find
+// it, MONGO_URI comes back empty, and the app falls back to an in-memory
+// MongoDB with no error at all.
+require("dotenv").config({ path: path.join(__dirname, "..", "..", ".env") });
 
 function toInt(value, fallback) {
   const n = parseInt(value, 10);
