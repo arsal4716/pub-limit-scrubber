@@ -8,7 +8,7 @@ const { normalizePhone, extractPhoneFromRow } = require("./phoneUtils");
 // publisher's daily limit). Only phone numbers are kept in memory, not full
 // rows, so this scales to multi-million-row files without holding the
 // whole file in RAM (unlike a naive read-everything-into-an-array approach).
-function analyzeFile(inputPath) {
+function analyzeFile(inputPath, delimiter = ",") {
   return new Promise((resolve, reject) => {
     let totalRows = 0;
     let invalidPhoneCount = 0;
@@ -17,7 +17,7 @@ function analyzeFile(inputPath) {
     const uniquePhonesOrdered = [];
 
     fs.createReadStream(inputPath)
-      .pipe(parse({ headers: true }))
+      .pipe(parse({ headers: true, delimiter }))
       .on("error", reject)
       .on("data", (row) => {
         totalRows++;
@@ -45,11 +45,15 @@ function analyzeFile(inputPath) {
 // lost, even for rows that were skipped or invalid. `phoneResults` maps a
 // normalized phone to its buyer API result; `phonesToProcessSet` is the
 // subset of unique phones that were actually within the reserved quota.
-function writeOutputFile(inputPath, outputPath, { phoneResults, phonesToProcessSet }) {
+function writeOutputFile(
+  inputPath,
+  outputPath,
+  { phoneResults, phonesToProcessSet, delimiter = "," }
+) {
   return new Promise((resolve, reject) => {
     const seenInPass2 = new Set();
     const writeStream = fs.createWriteStream(outputPath);
-    const csvStream = format({ headers: true });
+    const csvStream = format({ headers: true, delimiter });
     let settled = false;
 
     const fail = (err) => {
@@ -68,7 +72,7 @@ function writeOutputFile(inputPath, outputPath, { phoneResults, phonesToProcessS
     csvStream.on("error", fail);
 
     fs.createReadStream(inputPath)
-      .pipe(parse({ headers: true }))
+      .pipe(parse({ headers: true, delimiter }))
       .on("error", (err) => {
         csvStream.end();
         fail(err);

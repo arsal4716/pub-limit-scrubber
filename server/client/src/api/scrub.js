@@ -1,5 +1,10 @@
 import client from "./client";
 
+export async function fetchUploadRequirements() {
+  const { data } = await client.get("/scrub/upload-requirements");
+  return data;
+}
+
 export async function uploadScrubFile(publisherName, file) {
   const form = new FormData();
   form.append("publisherName", publisherName);

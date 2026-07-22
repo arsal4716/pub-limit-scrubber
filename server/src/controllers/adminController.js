@@ -1,3 +1,5 @@
+const fs = require("fs");
+const path = require("path");
 const Publisher = require("../models/Publisher");
 const ScrubJob = require("../models/ScrubJob");
 const GlobalConfig = require("../models/GlobalConfig");
@@ -138,6 +140,25 @@ async function listJobs(req, res) {
   res.json({ jobs, total, page: pageNum, pageSize });
 }
 
+async function deleteJob(req, res) {
+  const job = await ScrubJob.findById(req.params.id);
+  if (!job) return res.status(404).json({ error: "Job not found" });
+
+  if (["queued", "analyzing", "processing"].includes(job.status)) {
+    return res.status(409).json({
+      error: "Cannot delete a job that is still queued or in progress",
+    });
+  }
+
+  // The input/output files for a job always live together in one directory
+  // (see middleware/upload.js) - remove it, then the job record.
+  const jobDir = path.dirname(job.inputPath);
+  await fs.promises.rm(jobDir, { recursive: true, force: true });
+  await ScrubJob.deleteOne({ _id: job._id });
+
+  res.json({ success: true });
+}
+
 module.exports = {
   getConfig,
   updateConfig,
@@ -145,4 +166,5 @@ module.exports = {
   createPublisher,
   updatePublisher,
   listJobs,
+  deleteJob,
 };

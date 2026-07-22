@@ -5,6 +5,7 @@ const ScrubJob = require("../models/ScrubJob");
 const { enqueueJob, pendingPhoneCountAhead } = require("../services/scrubQueue");
 const { leadsPerMinuteRate } = require("../services/buyerApiClient");
 const { todayKey } = require("../utils/dateKey");
+const { PHONE_HEADER_CANDIDATES } = require("../services/phoneUtils");
 
 function jobToStatusDto(job) {
   return {
@@ -96,6 +97,13 @@ async function downloadOutput(req, res) {
   res.download(job.outputPath, downloadName);
 }
 
+function getUploadRequirements(req, res) {
+  res.json({
+    acceptedPhoneHeaders: PHONE_HEADER_CANDIDATES,
+    acceptedDelimiters: [",", ";"],
+  });
+}
+
 async function listJobsForPublisher(req, res) {
   const { publisherName } = req.query;
   if (!publisherName) {
@@ -113,4 +121,10 @@ async function listJobsForPublisher(req, res) {
   res.json({ jobs: jobs.map(jobToStatusDto) });
 }
 
-module.exports = { uploadFile, getStatus, downloadOutput, listJobsForPublisher };
+module.exports = {
+  uploadFile,
+  getStatus,
+  downloadOutput,
+  listJobsForPublisher,
+  getUploadRequirements,
+};

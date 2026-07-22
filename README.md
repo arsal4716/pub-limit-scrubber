@@ -13,9 +13,14 @@ admin dashboard for managing limits and reviewing scrub history.
    exact daily limit and how many leads they can still scrub today, with a
    clear note that any leads beyond that will be skipped in the output.
 2. They upload a CSV lead file (any size — files are streamed, not loaded
-   into memory). The server reads the file once to find every **unique,
-   valid US phone number**, in the order they first appear. Non-US-format
-   phones are marked invalid and never sent to the buyer API.
+   into memory; comma- or semicolon-delimited files are both auto-detected).
+   The upload page shows the exact list of phone-column header names it
+   recognizes (`phone_number`, `Phone`, `phone`, `CallerId`, etc. — see
+   `phoneUtils.PHONE_HEADER_CANDIDATES`, served via
+   `GET /api/scrub/upload-requirements` so the UI can't drift out of sync
+   with the actual parser). The server reads the file once to find every
+   **unique, valid US phone number**, in the order they first appear.
+   Non-US-format phones are marked invalid and never sent to the buyer API.
 3. It reserves a slice of that publisher's remaining daily quota (and the
    global daily quota) — whichever is smaller — atomically, so two
    simultaneous uploads can never oversell either limit.
@@ -36,7 +41,9 @@ admin dashboard for managing limits and reviewing scrub history.
 8. Admins log in to `/admin` to set the global daily cap, add publishers and
    set/edit their individual daily caps (validated so the sum of publisher
    caps can never exceed the global cap), and browse every scrub job with
-   full stats and a download link.
+   full stats, a download link, and a delete action (removes the job record
+   plus its input/output files; blocked while a job is still queued or
+   in progress).
 
 ## Stack
 

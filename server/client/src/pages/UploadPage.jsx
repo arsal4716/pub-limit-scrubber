@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { uploadScrubFile, fetchJobsForPublisher } from "../api/scrub";
+import { uploadScrubFile, fetchJobsForPublisher, fetchUploadRequirements } from "../api/scrub";
 import { validatePublisher } from "../api/publishers";
 import JobStatusCard from "../components/JobStatusCard.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
@@ -35,6 +35,13 @@ export default function UploadPage() {
   });
 
   const isValid = validation?.valid === true;
+
+  const { data: uploadRequirements } = useQuery({
+    queryKey: ["upload-requirements"],
+    queryFn: fetchUploadRequirements,
+    enabled: isValid,
+    staleTime: Infinity,
+  });
 
   const { data: recentJobs = [], refetch: refetchRecent } = useQuery({
     queryKey: ["publisher-jobs", publisherName],
@@ -110,6 +117,19 @@ export default function UploadPage() {
               <strong>skipped</strong> and marked "Skipped - Daily Limit Reached" in the output.
             </p>
           </div>
+
+          {uploadRequirements && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+              <p className="font-medium text-slate-700">Your file's phone column header must be one of:</p>
+              <p className="mt-1 font-mono text-xs text-slate-500">
+                {uploadRequirements.acceptedPhoneHeaders.join(", ")}
+              </p>
+              <p className="mt-2">
+                Comma- or semicolon-delimited CSV files are both supported (delimiter is detected
+                automatically). Header names must match exactly, including case.
+              </p>
+            </div>
+          )}
 
           <form
             onSubmit={handleSubmit}

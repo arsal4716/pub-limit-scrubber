@@ -3,6 +3,7 @@ const ScrubJob = require("../models/ScrubJob");
 const { analyzeFile, writeOutputFile } = require("./csvService");
 const { processPhones, leadsPerMinuteRate } = require("./buyerApiClient");
 const { reserveQuota } = require("./limitService");
+const { detectDelimiter } = require("../utils/csvDelimiter");
 
 // Single, sequential, in-process worker. Only one job runs at a time, which
 // automatically respects the buyer API's global rate limit (each job already
@@ -50,7 +51,8 @@ async function runJob(jobId) {
   job.startedAt = job.startedAt || new Date();
   await job.save();
 
-  const analysis = await analyzeFile(job.inputPath);
+  const delimiter = await detectDelimiter(job.inputPath);
+  const analysis = await analyzeFile(job.inputPath, delimiter);
 
   job.totalRows = analysis.totalRows;
   job.invalidPhoneCount = analysis.invalidPhoneCount;
@@ -89,7 +91,7 @@ async function runJob(jobId) {
   }
 
   const outputPath = path.join(path.dirname(job.inputPath), "output.csv");
-  await writeOutputFile(job.inputPath, outputPath, { phoneResults, phonesToProcessSet });
+  await writeOutputFile(job.inputPath, outputPath, { phoneResults, phonesToProcessSet, delimiter });
 
   job.outputPath = outputPath;
   job.status = "completed";

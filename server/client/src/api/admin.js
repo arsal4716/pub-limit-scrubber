@@ -29,3 +29,8 @@ export async function fetchAdminJobs(params) {
   const { data } = await client.get("/admin/jobs", { params });
   return data;
 }
+
+export async function deleteAdminJob(id) {
+  const { data } = await client.delete(`/admin/jobs/${id}`);
+  return data;
+}

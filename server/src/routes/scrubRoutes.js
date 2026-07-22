@@ -4,12 +4,14 @@ const {
   getStatus,
   downloadOutput,
   listJobsForPublisher,
+  getUploadRequirements,
 } = require("../controllers/scrubController");
 const { upload } = require("../middleware/upload");
 const asyncHandler = require("../utils/asyncHandler");
 
 const router = express.Router();
 
+router.get("/upload-requirements", getUploadRequirements);
 router.post("/upload", upload.single("file"), asyncHandler(uploadFile));
 router.get("/status/:jobId", asyncHandler(getStatus));
 router.get("/download/:jobId", asyncHandler(downloadOutput));
