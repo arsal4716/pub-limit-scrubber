@@ -34,14 +34,12 @@ module.exports = {
     process.env.LM_BUYER_API_TIMEOUT_MS || process.env.BUYER_API_TIMEOUT_MS,
     10000
   ),
-  lmDailyLimit: toInt(process.env.LM_DAILY_LIMIT, 100000),
 
   // IC (ACA) - salesradix.
   icBuyerApiUrl: process.env.IC_BUYER_API_URL || "https://api.salesradix.com/agentavailability",
   icBuyerApiTimeoutMs: toInt(process.env.IC_BUYER_API_TIMEOUT_MS, 5000),
   icVertical: process.env.IC_VERTICAL || "Health",
   icSubSourceId: toInt(process.env.IC_SUBSOURCE_ID, 3898),
-  icDailyLimit: toInt(process.env.IC_DAILY_LIMIT, 100000),
 
   // Shared rate limiting: CONCURRENCY phones every BATCH_DELAY_MS, each
   // phone pinging both buyer APIs at the same time. Default 20/1200ms
