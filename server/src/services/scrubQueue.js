@@ -97,6 +97,7 @@ async function runJob(jobId) {
   if (phonesToProcess.length > 0) {
     await processPhones(
       phonesToProcess,
+      analysis.phoneStates,
       (phone, result) => {
         phoneResults.set(phone, result);
         applyResultToJob(job, result);

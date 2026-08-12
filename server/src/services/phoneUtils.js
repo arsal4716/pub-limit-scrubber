@@ -40,4 +40,25 @@ function extractPhoneFromRow(row) {
   return null;
 }
 
-module.exports = { normalizePhone, extractPhoneFromRow, PHONE_HEADER_CANDIDATES };
+const STATE_HEADER_CANDIDATES = ["State", "state", "ST", "st", "STATE", "State Code", "state_code"];
+
+// Extracts a 2-letter state code from the row, e.g. "az" -> "AZ". Returns
+// null if no recognized state column is present or it's blank - callers
+// that require a state (e.g. the HC buyer API) must handle that case.
+function extractStateFromRow(row) {
+  for (const key of STATE_HEADER_CANDIDATES) {
+    if (row[key]) {
+      const code = row[key].toString().trim().toUpperCase();
+      return code || null;
+    }
+  }
+  return null;
+}
+
+module.exports = {
+  normalizePhone,
+  extractPhoneFromRow,
+  extractStateFromRow,
+  PHONE_HEADER_CANDIDATES,
+  STATE_HEADER_CANDIDATES,
+};

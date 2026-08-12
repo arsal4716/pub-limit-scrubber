@@ -56,7 +56,7 @@ export default function JobsTable() {
               <th className="text-right px-4 py-2 font-medium">Accepted</th>
               <th className="text-right px-4 py-2 font-medium">Blocked</th>
               <th className="text-right px-4 py-2 font-medium">LM Blocked</th>
-              <th className="text-right px-4 py-2 font-medium">IC Blocked</th>
+              <th className="text-right px-4 py-2 font-medium">HC Blocked</th>
               <th className="text-left px-4 py-2 font-medium">Status</th>
               <th className="text-right px-4 py-2 font-medium">Actions</th>
             </tr>

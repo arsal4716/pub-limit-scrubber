@@ -124,6 +124,12 @@ export default function UploadPage() {
               <p className="mt-1 font-mono text-xs text-slate-500">
                 {uploadRequirements.acceptedPhoneHeaders.join(", ")}
               </p>
+              <p className="mt-3 font-medium text-slate-700">
+                Your file must also include a state column (2-letter code, e.g. "AZ") — one of:
+              </p>
+              <p className="mt-1 font-mono text-xs text-slate-500">
+                {uploadRequirements.acceptedStateHeaders.join(", ")}
+              </p>
               <p className="mt-2">
                 Comma- or semicolon-delimited CSV files are both supported (delimiter is detected
                 automatically). Header names must match exactly, including case.
