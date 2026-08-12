@@ -1,10 +1,9 @@
 const path = require("path");
 const ScrubJob = require("../models/ScrubJob");
 const { analyzeFile, writeOutputFile } = require("./csvService");
-const { processPhones, leadsPerMinuteRate } = require("./buyerApiClient");
+const { processPhonesSplit, leadsPerMinuteRate } = require("./buyerApiClient");
 const { reserveQuota } = require("./limitService");
 const { detectDelimiter } = require("../utils/csvDelimiter");
-const { BUYER_SLOT } = require("../constants/buyers");
 
 function applyBuyerStat(stat, status) {
   if (status === "Blocked") stat.blockedCount += 1;
@@ -13,16 +12,17 @@ function applyBuyerStat(stat, status) {
   else if (status === "Not Checked") stat.notCheckedCount += 1;
 }
 
-// Rolls a single phone's combined buyer result into the job's running
-// overall and per-buyer (anonymized buyer1/buyer2) counters.
+// Rolls a single phone's result (from whichever one buyer it was routed
+// to) into the job's running overall and per-buyer (anonymized
+// buyer1/buyer2) counters.
 function applyResultToJob(job, result) {
-  if (result.overallStatus === "Blocked") job.blockedCount += 1;
-  else if (result.overallStatus === "Error") job.apiErrorCount += 1;
-  else if (result.overallStatus === "Available") job.acceptedCount += 1;
+  if (result.status === "Blocked") job.blockedCount += 1;
+  else if (result.status === "Error") job.apiErrorCount += 1;
+  else if (result.status === "Available") job.acceptedCount += 1;
+  // "Not Checked" (that phone's assigned buyer was out of daily quota)
+  // isn't counted as accepted/blocked/error - only reflected in buyerStats.
 
-  for (const [buyerKey, buyerResult] of Object.entries(result.buyers)) {
-    applyBuyerStat(job.buyerStats[BUYER_SLOT[buyerKey]], buyerResult.status);
-  }
+  applyBuyerStat(job.buyerStats[result.slot], result.status);
 }
 
 // Single, sequential, in-process worker. Only one job runs at a time, which
@@ -95,16 +95,23 @@ async function runJob(jobId) {
   const phoneResults = new Map();
 
   if (phonesToProcess.length > 0) {
-    await processPhones(
+    // LM and HC process their own half of the list concurrently, so
+    // progress callbacks can arrive from both at once - chain job.save()
+    // calls so they never overlap (concurrent saves on the same in-memory
+    // document would race on its version key).
+    let saveChain = Promise.resolve();
+
+    await processPhonesSplit(
       phonesToProcess,
       analysis.phoneStates,
       (phone, result) => {
         phoneResults.set(phone, result);
         applyResultToJob(job, result);
       },
-      async (processedSoFar) => {
+      (processedSoFar) => {
         job.processedCount = processedSoFar;
-        await job.save();
+        saveChain = saveChain.then(() => job.save());
+        return saveChain;
       }
     );
   }
@@ -127,7 +134,7 @@ async function recoverInterruptedJobs() {
   });
 
   for (const job of stuck) {
-    // Reset progress counters - processPhones() will rebuild them from
+    // Reset progress counters - processPhonesSplit() will rebuild them from
     // scratch on this run, so any partial counts from before the crash
     // must not be added on top.
     job.processedCount = 0;

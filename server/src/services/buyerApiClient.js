@@ -1,6 +1,7 @@
 const axios = require("axios");
 const env = require("../config/env");
 const { reserveBuyerCall } = require("./buyerLimitService");
+const { BUYER_SLOT } = require("../constants/buyers");
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -56,89 +57,93 @@ async function pingHC(phone, state) {
 
 const BUYER_PINGERS = { LM: pingLM, HC: pingHC };
 
-// Enforces the buyer's own daily call cap before actually pinging it. If
-// the cap was already reached today, the buyer is skipped for this phone
-// (the other buyer is still called normally) rather than failing the job.
-// `precheck(extra)` can veto the call entirely (e.g. HC needs a state and
-// shouldn't burn its daily quota on a row that doesn't have one).
-async function callBuyer(buyerKey, phone, extra, precheck) {
-  if (precheck) {
-    const skip = precheck(extra);
-    if (skip) return skip;
+// LM and HC both scrub against the same underlying suppression data, so
+// checking a phone against both is redundant. Instead each phone is routed
+// to exactly ONE buyer - split the unique phone list in half (first half to
+// LM/buyer1, second half to HC/buyer2) and run both halves through their
+// own independent, concurrently-running pacing loop. Since neither buyer
+// re-checks the other's phones, this doubles total throughput (e.g. two
+// buyers each sustaining ~1000/min yields ~2000 unique phones/min overall)
+// instead of just doubling API calls per phone.
+async function checkPhoneWithBuyer(buyerKey, phone, state) {
+  if (buyerKey === "HC" && !state) {
+    return { status: "Error", message: "Missing state value", raw: null };
   }
 
   const allowed = await reserveBuyerCall(buyerKey);
   if (!allowed) {
+    // No fallback to the other buyer by design - a phone routed to a
+    // buyer that's out of daily quota is left unprocessed rather than
+    // double-checked by whichever buyer still has room.
     return { status: "Not Checked", message: "Daily buyer limit reached", raw: null };
   }
-  return BUYER_PINGERS[buyerKey](phone, extra);
+  return BUYER_PINGERS[buyerKey](phone, state);
 }
 
-function requireState(state) {
-  return state ? null : { status: "Error", message: "Missing state value", raw: null };
-}
-
-// Pings both buyers for a phone at the same time. Overall status is
-// "Available" if either buyer allows it, "Blocked" only if every buyer
-// that was actually queried reports it blocked, and "Error"/"Not
-// Processed" when no buyer could give a real answer. `state` is the
-// lead's 2-letter state code, required by HC.
-async function checkPhone(phone, state) {
-  const [lm, hc] = await Promise.all([
-    callBuyer("LM", phone),
-    callBuyer("HC", phone, state, requireState),
-  ]);
-  const buyers = { LM: lm, HC: hc };
-
-  const queried = Object.values(buyers).filter((r) => r.status !== "Not Checked");
-  let overallStatus;
-  if (queried.some((r) => r.status === "Available")) {
-    overallStatus = "Available";
-  } else if (queried.length > 0 && queried.every((r) => r.status === "Blocked")) {
-    overallStatus = "Blocked";
-  } else if (queried.length === 0) {
-    overallStatus = "Not Processed";
-  } else {
-    overallStatus = "Error";
-  }
-
-  return { overallStatus, buyers };
-}
-
-// Processes `phones` in batches of `env.buyerApiConcurrency` phones,
-// waiting `env.buyerApiBatchDelayMs` between batches. Each phone pings
-// both buyers concurrently, so default settings (20 phones / 1200ms)
-// throttle each buyer to ~1000 requests/min independently. `phoneStates`
-// maps a normalized phone to its state code (for HC). `onBatchDone
-// (processedSoFar, total)` is called after each batch so callers can
-// persist progress for polling clients.
-async function processPhones(phones, phoneStates, onResult, onBatchDone) {
-  const total = phones.length;
+// Runs one buyer's half of the split at env.buyerApiConcurrency phones
+// every env.buyerApiBatchDelayMs, independent of the other buyer's loop.
+async function processPhonesForBuyer(buyerKey, phones, phoneStates, onResult, onProgress) {
+  const slot = BUYER_SLOT[buyerKey];
   let processed = 0;
 
-  for (let i = 0; i < total; i += env.buyerApiConcurrency) {
+  for (let i = 0; i < phones.length; i += env.buyerApiConcurrency) {
     const batch = phones.slice(i, i + env.buyerApiConcurrency);
 
     await Promise.all(
       batch.map(async (phone) => {
-        const result = await checkPhone(phone, phoneStates.get(phone));
-        onResult(phone, result);
+        const state = phoneStates.get(phone);
+        const result = await checkPhoneWithBuyer(buyerKey, phone, state);
+        onResult(phone, { slot, buyerKey, ...result });
       })
     );
 
     processed += batch.length;
-    if (onBatchDone) await onBatchDone(processed, total);
+    if (onProgress) await onProgress(processed);
 
-    const isLastBatch = i + env.buyerApiConcurrency >= total;
+    const isLastBatch = i + env.buyerApiConcurrency >= phones.length;
     if (!isLastBatch) {
       await sleep(env.buyerApiBatchDelayMs);
     }
   }
 }
 
-// Effective sustained throughput against each buyer API, e.g. 20/1.2s = ~1000/min.
-function leadsPerMinuteRate() {
-  return (env.buyerApiConcurrency / env.buyerApiBatchDelayMs) * 60 * 1000;
+// Splits `phones` into two halves (buyer1 = LM gets the first, larger half
+// on an odd count; buyer2 = HC gets the second) and processes both halves
+// concurrently. `phoneStates` maps a normalized phone to its state code
+// (for HC). `onResult(phone, result)` fires per phone with
+// `{ slot, buyerKey, status, message, raw }` - exactly one buyer's result,
+// since each phone is only ever routed to one. `onBatchDone(processedSoFar,
+// total)` fires after either loop makes progress, so callers can persist
+// combined progress for polling clients.
+async function processPhonesSplit(phones, phoneStates, onResult, onBatchDone) {
+  const total = phones.length;
+  const mid = Math.ceil(total / 2);
+  const buyer1Phones = phones.slice(0, mid);
+  const buyer2Phones = phones.slice(mid);
+
+  let buyer1Done = 0;
+  let buyer2Done = 0;
+  const reportProgress = async () => {
+    if (onBatchDone) await onBatchDone(buyer1Done + buyer2Done, total);
+  };
+
+  await Promise.all([
+    processPhonesForBuyer("LM", buyer1Phones, phoneStates, onResult, async (n) => {
+      buyer1Done = n;
+      await reportProgress();
+    }),
+    processPhonesForBuyer("HC", buyer2Phones, phoneStates, onResult, async (n) => {
+      buyer2Done = n;
+      await reportProgress();
+    }),
+  ]);
 }
 
-module.exports = { checkPhone, processPhones, leadsPerMinuteRate };
+// Combined sustained throughput across BOTH buyers running in parallel on
+// their own half of the list, e.g. 20/1.2s per buyer = ~1000/min per buyer
+// = ~2000 unique phones/min overall.
+function leadsPerMinuteRate() {
+  return 2 * ((env.buyerApiConcurrency / env.buyerApiBatchDelayMs) * 60 * 1000);
+}
+
+module.exports = { processPhonesSplit, leadsPerMinuteRate };

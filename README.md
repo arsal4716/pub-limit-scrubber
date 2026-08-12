@@ -15,42 +15,46 @@ managing limits and reviewing scrub history.
    clear note that any leads beyond that will be skipped in the output.
 2. They upload a CSV lead file (any size — files are streamed, not loaded
    into memory; comma- or semicolon-delimited files are both auto-detected).
-   The upload page shows the exact list of phone-column header names it
-   recognizes (`phone_number`, `Phone`, `phone`, `CallerId`, etc. — see
-   `phoneUtils.PHONE_HEADER_CANDIDATES`, served via
-   `GET /api/scrub/upload-requirements` so the UI can't drift out of sync
-   with the actual parser). The file must also include a state column (a
-   2-letter code, e.g. `AZ` — see `phoneUtils.STATE_HEADER_CANDIDATES`),
-   used per-lead for the HC buyer call. The server reads the file once to
-   find every **unique, valid US phone number**, in the order they first
+   Column headers are matched automatically regardless of case, spacing,
+   underscores, or hyphens (`phoneUtils.PHONE_HEADER_CANDIDATES`,
+   `STATE_HEADER_CANDIDATES`, served via `GET /api/scrub/upload-requirements`
+   so the UI can't drift out of sync with the actual parser). A state
+   column is required (2-letter code or full state name, any case — "AZ",
+   "az", and "Arizona" all work), used per-lead for the HC buyer call. The
+   server reads the file once to find every **unique, valid US phone
+   number** (any common format — dashes, parens, dots, a leading country
+   code, or a trailing extension are all handled), in the order they first
    appear. Non-US-format phones are marked invalid and never sent to the
-   buyer APIs; a phone with no state value still gets checked against LM,
-   but HC records that lead as `Error` (missing state) rather than
-   guessing a state.
+   buyer APIs.
 3. It reserves a slice of that publisher's remaining daily quota (and the
    global daily quota) — whichever is smaller — atomically, so two
    simultaneous uploads can never oversell either limit.
-4. Only that many unique phones are sent to the buyer APIs, throttled to
-   ~1000 requests/minute per buyer (20 phones every 1.2s, each phone pinging
-   both LM and HC at the same time). Everything beyond the reserved slice is
-   skipped, not dropped. Each buyer also has its own daily API-call cap
-   (see "Buyer API contract" below) — if a buyer's own cap is reached mid-file,
-   that buyer is skipped for the remaining phones while the other buyer keeps
-   going.
+4. LM and HC both scrub against the same underlying suppression data, so
+   checking a phone against both would be redundant. Instead, the reserved
+   unique phones are **split roughly in half** (first half → buyer1/LM,
+   second half → buyer2/HC, in first-occurrence order — e.g. 90,000 unique
+   phones become 45,000 to each buyer) and both halves are processed
+   **concurrently**, each throttled to ~1000 requests/minute (20 phones
+   every 1.2s per buyer) — so total throughput is ~2000 unique phones/minute
+   combined, not 1000. Everything beyond the reserved slice is skipped, not
+   dropped. Each buyer also has its own daily API-call cap (see "Buyer API
+   contract" below) — if a phone's assigned buyer is out of quota for the
+   day, that phone is left unprocessed (`Not Checked`) rather than being
+   redirected to the other buyer.
 5. The server writes the **original file back out unchanged**, with columns
    appended: `NormalizedPhone`, `ScrubStatus` (`Processed`, `Duplicate In
-   File`, `Invalid Phone`, or `Skipped - Daily Limit Reached`), plus a
-   per-buyer breakdown: `Buyer1Status`, `Buyer1Message`, `Buyer2Status`,
-   `Buyer2Message` (each `Available`, `Blocked`, `Error`, or `Not Checked`
-   if that buyer's own daily cap was reached), and `OverallStatus`
-   (`Available` if either buyer allowed it, `Blocked` only if every buyer
-   that was actually queried blocked it). "Buyer1"/"Buyer2" is an
-   anonymized, fixed mapping (buyer1 = LM, buyer2 = HC) — the output file
-   and the publisher-facing UI never name the real buyers. No original
+   File`, `Invalid Phone`, or `Skipped - Daily Limit Reached`),
+   `BuyerAssigned` (`Buyer 1` or `Buyer 2` — an anonymized, fixed mapping;
+   buyer1 = LM, buyer2 = HC — the output file and the publisher-facing UI
+   never name the real buyers), `BuyerStatus` (`Available`, `Blocked`,
+   `Error`, or `Not Checked` if that buyer's daily cap was reached), and
+   `BuyerMessage`. Since each phone is checked by exactly one buyer, there's
+   a single status/message pair per row, not one per buyer. No original
    data is ever lost.
 6. The publisher can leave the tab — the upload page polls job status and
-   shows an ETA (`leads remaining / ~1000 per minute`). A shareable
-   `/status/:jobId` link is also shown so they can check back later.
+   shows an ETA (`leads remaining / ~2000 per minute combined`). A
+   shareable `/status/:jobId` link is also shown so they can check back
+   later.
 7. Both the global limit and every publisher's limit reset at midnight
    **America/New_York** (configurable) — usage is tracked per calendar day
    in that timezone, so nothing needs a cron job to "reset".
@@ -102,7 +106,12 @@ server/
 
 ## Buyer API contract
 
-Every normalized phone is sent to **both** buyers at the same time:
+LM and HC both scrub against the same underlying suppression data, so each
+normalized phone is routed to exactly **one** buyer rather than checked
+against both — the reserved unique phone list is split roughly in half
+(first half → LM/buyer1, second half → HC/buyer2, in first-occurrence
+order) and both halves are processed concurrently, each in its own pacing
+loop:
 
 - **LM (ACA — callgrid)**, configured via `LM_BUYER_API_URL`:
   `GET {LM_BUYER_API_URL}?CallerId=1{phone}`. Response `{ code, message }`
@@ -110,26 +119,24 @@ Every normalized phone is sent to **both** buyers at the same time:
   as available.
 - **HC (ACA — NextGen Insurance Solutions)**, configured via
   `HC_BUYER_API_URL`: `GET {HC_BUYER_API_URL}?state={state}&caller_id=1{phone}`,
-  where `state` is that lead's 2-letter state code from the CSV. Duplicate/
-  suppression is read solely from the response's `phs_suppressed` field
-  (`true` means blocked) — the capacity/routing fields in the same response
-  (`accept`, `status`, `agents`, etc.) are informational only and don't
-  affect the scrub result. A lead with no state value is recorded as
-  `Error` for HC without calling the API (and without spending HC's daily
-  quota) rather than guessing a state.
+  where `state` is that lead's state from the CSV (abbreviation or full
+  name, any case). Duplicate/suppression is read solely from the response's
+  `phs_suppressed` field (`true` means blocked) — the capacity/routing
+  fields in the same response (`accept`, `status`, `agents`, etc.) are
+  informational only and don't affect the scrub result. A lead with no
+  state value is recorded as `Error` for HC without calling the API (and
+  without spending HC's daily quota) rather than guessing a state.
 
-Network/API errors for a buyer are recorded as `Error` for that buyer
-rather than failing the whole job. Each buyer also has its own daily
-API-call cap, seeded at 100,000 in the DB and from then on only ever
-changed from the admin dashboard (no env var) — once a buyer's cap is
-reached for the day, it's skipped (`Not Checked`) for the rest of that
-buyer's calls, independent of the other buyer and of the global lead limit.
+Network/API errors are recorded as `Error` for that phone rather than
+failing the whole job. Each buyer also has its own daily API-call cap,
+seeded at 100,000 in the DB and from then on only ever changed from the
+admin dashboard (no env var) — once a buyer's cap is reached for the day,
+any phone still assigned to it is left `Not Checked` (there's no fallback
+to the other buyer), independent of the global lead limit.
 
-A phone's overall status is `Available` if either buyer allowed it, and
-`Blocked` only if every buyer that was actually queried reported it
-blocked. Output columns and the publisher-facing summary only ever refer
-to `Buyer1`/`Buyer2` (buyer1 = LM, buyer2 = HC, fixed) — publishers never
-see which real buyer each slot is.
+Output columns and the publisher-facing summary only ever refer to
+`Buyer 1`/`Buyer 2` (buyer1 = LM, buyer2 = HC, fixed) — publishers never
+see which real buyer checked a given phone.
 
 ## Getting started
 

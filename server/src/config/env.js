@@ -41,9 +41,10 @@ module.exports = {
     process.env.HC_BUYER_API_URL || "https://api.nextgeninsurancesolutionsinc.com/vendor-availability",
   hcBuyerApiTimeoutMs: toInt(process.env.HC_BUYER_API_TIMEOUT_MS, 5000),
 
-  // Shared rate limiting: CONCURRENCY phones every BATCH_DELAY_MS, each
-  // phone pinging both buyer APIs at the same time. Default 20/1200ms
-  // sustains ~1000 requests/min against each buyer independently.
+  // Per-buyer rate limiting: CONCURRENCY phones every BATCH_DELAY_MS. LM
+  // and HC each run their own independent, concurrently-running loop over
+  // their half of the unique phone list, so default 20/1200ms sustains
+  // ~1000/min per buyer = ~2000 unique phones/min combined.
   buyerApiConcurrency: toInt(process.env.BUYER_API_CONCURRENCY, 20),
   buyerApiBatchDelayMs: toInt(process.env.BUYER_API_BATCH_DELAY_MS, 1200),
 
