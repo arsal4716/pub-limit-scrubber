@@ -81,7 +81,10 @@ function writeOutputFile(
         const normalized = normalizePhone(extractPhoneFromRow(row));
 
         let scrubStatus;
-        let result = { duplicate: "", buyerCode: "", buyerMessage: "" };
+        let result = {
+          overallStatus: "",
+          buyers: { LM: { status: "", message: "" }, IC: { status: "", message: "" } },
+        };
 
         if (!normalized) {
           scrubStatus = "Invalid Phone";
@@ -104,10 +107,14 @@ function writeOutputFile(
         csvStream.write({
           ...row,
           NormalizedPhone: normalized || "",
-          Duplicate: result.duplicate,
-          BuyerCode: result.buyerCode,
-          BuyerMessage: result.buyerMessage,
           ScrubStatus: scrubStatus,
+          // Buyer1/Buyer2 is an anonymized, fixed mapping - never expose
+          // which real buyer (LM/IC) each slot corresponds to here.
+          Buyer1Status: result.buyers.LM.status,
+          Buyer1Message: result.buyers.LM.message,
+          Buyer2Status: result.buyers.IC.status,
+          Buyer2Message: result.buyers.IC.message,
+          OverallStatus: result.overallStatus,
         });
       })
       .on("end", () => {

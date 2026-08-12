@@ -1,8 +1,9 @@
 # Pub Limit Scrubber
 
-A MERN app for scrubbing publisher lead files against a rate-limited buyer API,
-enforcing a global daily lead cap plus a per-publisher daily cap, with an
-admin dashboard for managing limits and reviewing scrub history.
+A MERN app for scrubbing publisher lead files against two rate-limited buyer
+APIs (LM and IC), enforcing a global daily lead cap, a per-publisher daily
+cap, and a per-buyer daily API-call cap, with an admin dashboard for
+managing limits and reviewing scrub history.
 
 ## How it works
 
@@ -24,26 +25,37 @@ admin dashboard for managing limits and reviewing scrub history.
 3. It reserves a slice of that publisher's remaining daily quota (and the
    global daily quota) — whichever is smaller — atomically, so two
    simultaneous uploads can never oversell either limit.
-4. Only that many unique phones are sent to the buyer API, throttled to
-   ~1000 requests/minute (20 concurrent requests every 1.2s, matching the
-   reference scrubbing script). Everything beyond the reserved slice is
-   skipped, not dropped.
+4. Only that many unique phones are sent to the buyer APIs, throttled to
+   ~1000 requests/minute per buyer (20 phones every 1.2s, each phone pinging
+   both LM and IC at the same time). Everything beyond the reserved slice is
+   skipped, not dropped. Each buyer also has its own daily API-call cap
+   (see "Buyer API contract" below) — if a buyer's own cap is reached mid-file,
+   that buyer is skipped for the remaining phones while the other buyer keeps
+   going.
 5. The server writes the **original file back out unchanged**, with columns
-   appended: `NormalizedPhone`, `Duplicate`, `BuyerCode`, `BuyerMessage`,
-   `ScrubStatus` (`Processed`, `Duplicate In File`, `Invalid Phone`, or
-   `Skipped - Daily Limit Reached`). No original data is ever lost.
+   appended: `NormalizedPhone`, `ScrubStatus` (`Processed`, `Duplicate In
+   File`, `Invalid Phone`, or `Skipped - Daily Limit Reached`), plus a
+   per-buyer breakdown: `Buyer1Status`, `Buyer1Message`, `Buyer2Status`,
+   `Buyer2Message` (each `Available`, `Blocked`, `Error`, or `Not Checked`
+   if that buyer's own daily cap was reached), and `OverallStatus`
+   (`Available` if either buyer allowed it, `Blocked` only if every buyer
+   that was actually queried blocked it). "Buyer1"/"Buyer2" is an
+   anonymized, fixed mapping (buyer1 = LM, buyer2 = IC) — the output file
+   and the publisher-facing UI never name the real buyers. No original
+   data is ever lost.
 6. The publisher can leave the tab — the upload page polls job status and
    shows an ETA (`leads remaining / ~1000 per minute`). A shareable
    `/status/:jobId` link is also shown so they can check back later.
 7. Both the global limit and every publisher's limit reset at midnight
    **America/New_York** (configurable) — usage is tracked per calendar day
    in that timezone, so nothing needs a cron job to "reset".
-8. Admins log in to `/admin` to set the global daily cap, add publishers and
-   set/edit their individual daily caps (validated so the sum of publisher
-   caps can never exceed the global cap), and browse every scrub job with
-   full stats, a download link, and a delete action (removes the job record
-   plus its input/output files; blocked while a job is still queued or
-   in progress).
+8. Admins log in to `/admin` to set the global daily cap, set each buyer's
+   own daily API-call cap (LM/IC, shown by real name — defaults to 100,000
+   each), add publishers and set/edit their individual daily caps (validated
+   so the sum of publisher caps can never exceed the global cap), and browse
+   every scrub job with full stats (including per-buyer blocked counts), a
+   download link, and a delete action (removes the job record plus its
+   input/output files; blocked while a job is still queued or in progress).
 
 ## Stack
 
@@ -64,9 +76,12 @@ admin dashboard for managing limits and reviewing scrub history.
 server/
   src/
     config/       env vars, MongoDB connection
-    models/       Publisher, GlobalConfig, DailyUsage, ScrubJob
+    models/       Publisher, GlobalConfig, DailyUsage, BuyerConfig,
+                  BuyerUsage, ScrubJob
+    constants/    buyer registry (LM/IC keys, labels, buyer1/buyer2 mapping)
     services/     phone normalization, buyer API client, quota reservation,
-                  streaming CSV scrub (two-pass), the job queue/worker
+                  per-buyer limit reservation, streaming CSV scrub
+                  (two-pass), the job queue/worker
     controllers/  request handlers
     routes/       Express routers
     middleware/   admin JWT auth, multer upload, error handler
@@ -82,16 +97,29 @@ server/
 
 ## Buyer API contract
 
-Configured via `BUYER_API_URL` — the normalized 10-digit phone is appended
-directly to this URL as a `GET` request (matching the reference script):
+Every normalized phone is sent to **both** buyers at the same time:
 
-```
-GET {BUYER_API_URL}{phone}
-```
+- **LM (ACA — callgrid)**, configured via `LM_BUYER_API_URL`:
+  `GET {LM_BUYER_API_URL}?CallerId=1{phone}`. Response `{ code, message }`
+  where `code` `4007` or `4005` means blocked; any other code is treated
+  as available.
+- **IC (ACA — salesradix)**, configured via `IC_BUYER_API_URL`:
+  `GET {IC_BUYER_API_URL}?PhoneNumber=1{phone}&Vertical={IC_VERTICAL}&SubSourceID={IC_SUBSOURCE_ID}&ResponseType=json`.
+  Response `{ result }` where `result === "Available"` (case-insensitive)
+  means available; anything else is treated as blocked/duplicate.
 
-Response `{ code: 4007, message }` means the CallerId is blocked/duplicate;
-any other response is treated as accepted. Network/API errors are recorded
-per-lead as `Duplicate: Error` rather than failing the whole job.
+Network/API errors for a buyer are recorded as `Error` for that buyer
+rather than failing the whole job. Each buyer also has its own daily
+API-call cap (`LM_DAILY_LIMIT` / `IC_DAILY_LIMIT`, default 100,000 each,
+editable in the admin dashboard after first boot) — once a buyer's cap is
+reached for the day, it's skipped (`Not Checked`) for the rest of that
+buyer's calls, independent of the other buyer and of the global lead limit.
+
+A phone's overall status is `Available` if either buyer allowed it, and
+`Blocked` only if every buyer that was actually queried reported it
+blocked. Output columns and the publisher-facing summary only ever refer
+to `Buyer1`/`Buyer2` (buyer1 = LM, buyer2 = IC, fixed) — publishers never
+see which real buyer each slot is.
 
 ## Getting started
 
@@ -102,7 +130,7 @@ as long as your machine can download the MongoDB binary once).
 
 ```bash
 npm run install:all
-cp server/.env.example server/.env             # edit ADMIN_PASSWORD, BUYER_API_URL, etc.
+cp server/.env.example server/.env             # edit ADMIN_PASSWORD, LM/IC_BUYER_API_URL, etc.
 cp server/client/.env.example server/client/.env
 npm run dev                                     # runs server (:6003) and client (:5173) together
 ```
@@ -113,8 +141,9 @@ Visit http://localhost:5173 (the Vite dev server, which proxies `/api` to
 using `ADMIN_USERNAME` / `ADMIN_PASSWORD` from `server/.env`.
 
 On first boot there are no publishers — sign in to `/admin`, set your
-global daily limit (defaults to 100,000), and add publishers with their own
-daily limits before anyone can upload a file for them.
+global daily limit (defaults to 100,000), review each buyer's daily
+API-call cap (LM/IC, also defaults to 100,000 each), and add publishers
+with their own daily limits before anyone can upload a file for them.
 
 ### Production: single port
 
@@ -136,9 +165,12 @@ no separate origin to configure.
 
 See `server/.env.example` for the full list, notably:
 
-- `BUYER_API_URL` — the buyer API endpoint (phone digits are appended).
-- `BUYER_API_CONCURRENCY` / `BUYER_API_BATCH_DELAY_MS` — rate limit knobs
-  (defaults to 20/1200ms ≈ 1000/min).
+- `LM_BUYER_API_URL` / `IC_BUYER_API_URL` — each buyer's API endpoint.
+- `LM_DAILY_LIMIT` / `IC_DAILY_LIMIT` — seed value for each buyer's own daily
+  API-call cap (100,000 each; editable in admin after first boot).
+- `IC_VERTICAL` / `IC_SUBSOURCE_ID` — extra query params IC's API requires.
+- `BUYER_API_CONCURRENCY` / `BUYER_API_BATCH_DELAY_MS` — shared rate limit
+  knobs (defaults to 20/1200ms ≈ 1000/min per buyer).
 - `DEFAULT_TOTAL_DAILY_LIMIT` — seed value for the global cap (100,000).
 - `LIMIT_RESET_TIMEZONE` — defaults to `America/New_York`.
 - `ADMIN_USERNAME` / `ADMIN_PASSWORD` / `ADMIN_JWT_SECRET` — single-admin

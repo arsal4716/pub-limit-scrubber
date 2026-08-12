@@ -4,6 +4,26 @@ const { analyzeFile, writeOutputFile } = require("./csvService");
 const { processPhones, leadsPerMinuteRate } = require("./buyerApiClient");
 const { reserveQuota } = require("./limitService");
 const { detectDelimiter } = require("../utils/csvDelimiter");
+const { BUYER_SLOT } = require("../constants/buyers");
+
+function applyBuyerStat(stat, status) {
+  if (status === "Blocked") stat.blockedCount += 1;
+  else if (status === "Available") stat.availableCount += 1;
+  else if (status === "Error") stat.errorCount += 1;
+  else if (status === "Not Checked") stat.notCheckedCount += 1;
+}
+
+// Rolls a single phone's combined buyer result into the job's running
+// overall and per-buyer (anonymized buyer1/buyer2) counters.
+function applyResultToJob(job, result) {
+  if (result.overallStatus === "Blocked") job.blockedCount += 1;
+  else if (result.overallStatus === "Error") job.apiErrorCount += 1;
+  else if (result.overallStatus === "Available") job.acceptedCount += 1;
+
+  for (const [buyerKey, buyerResult] of Object.entries(result.buyers)) {
+    applyBuyerStat(job.buyerStats[BUYER_SLOT[buyerKey]], buyerResult.status);
+  }
+}
 
 // Single, sequential, in-process worker. Only one job runs at a time, which
 // automatically respects the buyer API's global rate limit (each job already
@@ -79,9 +99,7 @@ async function runJob(jobId) {
       phonesToProcess,
       (phone, result) => {
         phoneResults.set(phone, result);
-        if (result.duplicate === "Yes") job.blockedCount += 1;
-        else if (result.duplicate === "Error") job.apiErrorCount += 1;
-        else job.acceptedCount += 1;
+        applyResultToJob(job, result);
       },
       async (processedSoFar) => {
         job.processedCount = processedSoFar;
@@ -115,6 +133,10 @@ async function recoverInterruptedJobs() {
     job.acceptedCount = 0;
     job.blockedCount = 0;
     job.apiErrorCount = 0;
+    job.buyerStats = {
+      buyer1: { blockedCount: 0, availableCount: 0, errorCount: 0, notCheckedCount: 0 },
+      buyer2: { blockedCount: 0, availableCount: 0, errorCount: 0, notCheckedCount: 0 },
+    };
     job.status = "queued";
     await job.save();
     enqueueJob(String(job._id));

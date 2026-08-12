@@ -2,6 +2,8 @@ const express = require("express");
 const {
   getConfig,
   updateConfig,
+  getBuyerConfig,
+  updateBuyerConfig,
   listPublishers,
   createPublisher,
   updatePublisher,
@@ -16,6 +18,9 @@ router.use(requireAdmin);
 
 router.get("/config", asyncHandler(getConfig));
 router.put("/config", asyncHandler(updateConfig));
+
+router.get("/buyer-config", asyncHandler(getBuyerConfig));
+router.put("/buyer-config", asyncHandler(updateBuyerConfig));
 
 router.get("/publishers", asyncHandler(listPublishers));
 router.post("/publishers", asyncHandler(createPublisher));
