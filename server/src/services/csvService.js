@@ -1,13 +1,14 @@
 const fs = require("fs");
 const { parse, format } = require("fast-csv");
-const { normalizePhone, extractPhoneFromRow } = require("./phoneUtils");
+const { normalizePhone, extractPhoneFromRow, extractStateFromRow } = require("./phoneUtils");
 
 // Pass 1: stream the uploaded file once to discover the total row count and
 // the ordered list of unique, valid US phone numbers ("first occurrence"
 // order - this defines which leads are "first" for the purposes of the
-// publisher's daily limit). Only phone numbers are kept in memory, not full
-// rows, so this scales to multi-million-row files without holding the
-// whole file in RAM (unlike a naive read-everything-into-an-array approach).
+// publisher's daily limit). Only phone numbers (and each one's state, for
+// the HC buyer) are kept in memory, not full rows, so this scales to
+// multi-million-row files without holding the whole file in RAM (unlike a
+// naive read-everything-into-an-array approach).
 function analyzeFile(inputPath, delimiter = ",") {
   return new Promise((resolve, reject) => {
     let totalRows = 0;
@@ -15,6 +16,7 @@ function analyzeFile(inputPath, delimiter = ",") {
     let duplicateInFileCount = 0;
     const seen = new Set();
     const uniquePhonesOrdered = [];
+    const phoneStates = new Map();
 
     fs.createReadStream(inputPath)
       .pipe(parse({ headers: true, delimiter }))
@@ -33,9 +35,10 @@ function analyzeFile(inputPath, delimiter = ",") {
         }
         seen.add(normalized);
         uniquePhonesOrdered.push(normalized);
+        phoneStates.set(normalized, extractStateFromRow(row));
       })
       .on("end", () => {
-        resolve({ totalRows, invalidPhoneCount, duplicateInFileCount, uniquePhonesOrdered });
+        resolve({ totalRows, invalidPhoneCount, duplicateInFileCount, uniquePhonesOrdered, phoneStates });
       });
   });
 }
@@ -83,7 +86,7 @@ function writeOutputFile(
         let scrubStatus;
         let result = {
           overallStatus: "",
-          buyers: { LM: { status: "", message: "" }, IC: { status: "", message: "" } },
+          buyers: { LM: { status: "", message: "" }, HC: { status: "", message: "" } },
         };
 
         if (!normalized) {
@@ -109,11 +112,11 @@ function writeOutputFile(
           NormalizedPhone: normalized || "",
           ScrubStatus: scrubStatus,
           // Buyer1/Buyer2 is an anonymized, fixed mapping - never expose
-          // which real buyer (LM/IC) each slot corresponds to here.
+          // which real buyer (LM/HC) each slot corresponds to here.
           Buyer1Status: result.buyers.LM.status,
           Buyer1Message: result.buyers.LM.message,
-          Buyer2Status: result.buyers.IC.status,
-          Buyer2Message: result.buyers.IC.message,
+          Buyer2Status: result.buyers.HC.status,
+          Buyer2Message: result.buyers.HC.message,
           OverallStatus: result.overallStatus,
         });
       })

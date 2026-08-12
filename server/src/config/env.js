@@ -35,11 +35,11 @@ module.exports = {
     10000
   ),
 
-  // IC (ACA) - salesradix.
-  icBuyerApiUrl: process.env.IC_BUYER_API_URL || "https://api.salesradix.com/agentavailability",
-  icBuyerApiTimeoutMs: toInt(process.env.IC_BUYER_API_TIMEOUT_MS, 5000),
-  icVertical: process.env.IC_VERTICAL || "Health",
-  icSubSourceId: toInt(process.env.IC_SUBSOURCE_ID, 3898),
+  // HC (ACA) - NextGen Insurance Solutions. Requires a per-lead state code
+  // (read from the CSV's state column - see phoneUtils.extractStateFromRow).
+  hcBuyerApiUrl:
+    process.env.HC_BUYER_API_URL || "https://api.nextgeninsurancesolutionsinc.com/vendor-availability",
+  hcBuyerApiTimeoutMs: toInt(process.env.HC_BUYER_API_TIMEOUT_MS, 5000),
 
   // Shared rate limiting: CONCURRENCY phones every BATCH_DELAY_MS, each
   // phone pinging both buyer APIs at the same time. Default 20/1200ms

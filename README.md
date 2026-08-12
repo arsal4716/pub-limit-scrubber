@@ -1,7 +1,7 @@
 # Pub Limit Scrubber
 
 A MERN app for scrubbing publisher lead files against two rate-limited buyer
-APIs (LM and IC), enforcing a global daily lead cap, a per-publisher daily
+APIs (LM and HC), enforcing a global daily lead cap, a per-publisher daily
 cap, and a per-buyer daily API-call cap, with an admin dashboard for
 managing limits and reviewing scrub history.
 
@@ -19,15 +19,20 @@ managing limits and reviewing scrub history.
    recognizes (`phone_number`, `Phone`, `phone`, `CallerId`, etc. — see
    `phoneUtils.PHONE_HEADER_CANDIDATES`, served via
    `GET /api/scrub/upload-requirements` so the UI can't drift out of sync
-   with the actual parser). The server reads the file once to find every
-   **unique, valid US phone number**, in the order they first appear.
-   Non-US-format phones are marked invalid and never sent to the buyer API.
+   with the actual parser). The file must also include a state column (a
+   2-letter code, e.g. `AZ` — see `phoneUtils.STATE_HEADER_CANDIDATES`),
+   used per-lead for the HC buyer call. The server reads the file once to
+   find every **unique, valid US phone number**, in the order they first
+   appear. Non-US-format phones are marked invalid and never sent to the
+   buyer APIs; a phone with no state value still gets checked against LM,
+   but HC records that lead as `Error` (missing state) rather than
+   guessing a state.
 3. It reserves a slice of that publisher's remaining daily quota (and the
    global daily quota) — whichever is smaller — atomically, so two
    simultaneous uploads can never oversell either limit.
 4. Only that many unique phones are sent to the buyer APIs, throttled to
    ~1000 requests/minute per buyer (20 phones every 1.2s, each phone pinging
-   both LM and IC at the same time). Everything beyond the reserved slice is
+   both LM and HC at the same time). Everything beyond the reserved slice is
    skipped, not dropped. Each buyer also has its own daily API-call cap
    (see "Buyer API contract" below) — if a buyer's own cap is reached mid-file,
    that buyer is skipped for the remaining phones while the other buyer keeps
@@ -40,7 +45,7 @@ managing limits and reviewing scrub history.
    if that buyer's own daily cap was reached), and `OverallStatus`
    (`Available` if either buyer allowed it, `Blocked` only if every buyer
    that was actually queried blocked it). "Buyer1"/"Buyer2" is an
-   anonymized, fixed mapping (buyer1 = LM, buyer2 = IC) — the output file
+   anonymized, fixed mapping (buyer1 = LM, buyer2 = HC) — the output file
    and the publisher-facing UI never name the real buyers. No original
    data is ever lost.
 6. The publisher can leave the tab — the upload page polls job status and
@@ -50,7 +55,7 @@ managing limits and reviewing scrub history.
    **America/New_York** (configurable) — usage is tracked per calendar day
    in that timezone, so nothing needs a cron job to "reset".
 8. Admins log in to `/admin` to set the global daily cap, set each buyer's
-   own daily API-call cap (LM/IC, shown by real name — defaults to 100,000
+   own daily API-call cap (LM/HC, shown by real name — defaults to 100,000
    each), add publishers and set/edit their individual daily caps (validated
    so the sum of publisher caps can never exceed the global cap), and browse
    every scrub job with full stats (including per-buyer blocked counts), a
@@ -78,7 +83,7 @@ server/
     config/       env vars, MongoDB connection
     models/       Publisher, GlobalConfig, DailyUsage, BuyerConfig,
                   BuyerUsage, ScrubJob
-    constants/    buyer registry (LM/IC keys, labels, buyer1/buyer2 mapping)
+    constants/    buyer registry (LM/HC keys, labels, buyer1/buyer2 mapping)
     services/     phone normalization, buyer API client, quota reservation,
                   per-buyer limit reservation, streaming CSV scrub
                   (two-pass), the job queue/worker
@@ -103,10 +108,15 @@ Every normalized phone is sent to **both** buyers at the same time:
   `GET {LM_BUYER_API_URL}?CallerId=1{phone}`. Response `{ code, message }`
   where `code` `4007` or `4005` means blocked; any other code is treated
   as available.
-- **IC (ACA — salesradix)**, configured via `IC_BUYER_API_URL`:
-  `GET {IC_BUYER_API_URL}?PhoneNumber=1{phone}&Vertical={IC_VERTICAL}&SubSourceID={IC_SUBSOURCE_ID}&ResponseType=json`.
-  Response `{ result }` where `result === "Available"` (case-insensitive)
-  means available; anything else is treated as blocked/duplicate.
+- **HC (ACA — NextGen Insurance Solutions)**, configured via
+  `HC_BUYER_API_URL`: `GET {HC_BUYER_API_URL}?state={state}&caller_id=1{phone}`,
+  where `state` is that lead's 2-letter state code from the CSV. Duplicate/
+  suppression is read solely from the response's `phs_suppressed` field
+  (`true` means blocked) — the capacity/routing fields in the same response
+  (`accept`, `status`, `agents`, etc.) are informational only and don't
+  affect the scrub result. A lead with no state value is recorded as
+  `Error` for HC without calling the API (and without spending HC's daily
+  quota) rather than guessing a state.
 
 Network/API errors for a buyer are recorded as `Error` for that buyer
 rather than failing the whole job. Each buyer also has its own daily
@@ -118,7 +128,7 @@ buyer's calls, independent of the other buyer and of the global lead limit.
 A phone's overall status is `Available` if either buyer allowed it, and
 `Blocked` only if every buyer that was actually queried reported it
 blocked. Output columns and the publisher-facing summary only ever refer
-to `Buyer1`/`Buyer2` (buyer1 = LM, buyer2 = IC, fixed) — publishers never
+to `Buyer1`/`Buyer2` (buyer1 = LM, buyer2 = HC, fixed) — publishers never
 see which real buyer each slot is.
 
 ## Getting started
@@ -130,7 +140,7 @@ as long as your machine can download the MongoDB binary once).
 
 ```bash
 npm run install:all
-cp server/.env.example server/.env             # edit ADMIN_PASSWORD, LM/IC_BUYER_API_URL, etc.
+cp server/.env.example server/.env             # edit ADMIN_PASSWORD, LM/HC_BUYER_API_URL, etc.
 cp server/client/.env.example server/client/.env
 npm run dev                                     # runs server (:6003) and client (:5173) together
 ```
@@ -142,7 +152,7 @@ using `ADMIN_USERNAME` / `ADMIN_PASSWORD` from `server/.env`.
 
 On first boot there are no publishers — sign in to `/admin`, set your
 global daily limit (defaults to 100,000), review each buyer's daily
-API-call cap (LM/IC, also defaults to 100,000 each), and add publishers
+API-call cap (LM/HC, also defaults to 100,000 each), and add publishers
 with their own daily limits before anyone can upload a file for them.
 
 ### Production: single port
@@ -165,8 +175,7 @@ no separate origin to configure.
 
 See `server/.env.example` for the full list, notably:
 
-- `LM_BUYER_API_URL` / `IC_BUYER_API_URL` — each buyer's API endpoint.
-- `IC_VERTICAL` / `IC_SUBSOURCE_ID` — extra query params IC's API requires.
+- `LM_BUYER_API_URL` / `HC_BUYER_API_URL` — each buyer's API endpoint.
 - Each buyer's own daily API-call cap is **not** an env var — it's a DB
   document seeded at 100,000 on first boot, changeable only from the admin
   dashboard's "Buyer API daily limits" card from then on.

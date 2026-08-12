@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 const { BUYER_KEYS } = require("../constants/buyers");
 
-// One doc per buyer (LM, IC) holding that buyer's own daily API-call cap,
+// One doc per buyer (LM, HC) holding that buyer's own daily API-call cap,
 // independent of the global/publisher lead limits in GlobalConfig.
 const buyerConfigSchema = new mongoose.Schema(
   {

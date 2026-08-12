@@ -5,7 +5,7 @@ const ScrubJob = require("../models/ScrubJob");
 const { enqueueJob, pendingPhoneCountAhead } = require("../services/scrubQueue");
 const { leadsPerMinuteRate } = require("../services/buyerApiClient");
 const { todayKey } = require("../utils/dateKey");
-const { PHONE_HEADER_CANDIDATES } = require("../services/phoneUtils");
+const { PHONE_HEADER_CANDIDATES, STATE_HEADER_CANDIDATES } = require("../services/phoneUtils");
 
 function jobToStatusDto(job) {
   return {
@@ -101,6 +101,7 @@ async function downloadOutput(req, res) {
 function getUploadRequirements(req, res) {
   res.json({
     acceptedPhoneHeaders: PHONE_HEADER_CANDIDATES,
+    acceptedStateHeaders: STATE_HEADER_CANDIDATES,
     acceptedDelimiters: [",", ";"],
   });
 }

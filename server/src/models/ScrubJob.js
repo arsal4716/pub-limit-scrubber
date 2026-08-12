@@ -38,7 +38,7 @@ const scrubJobSchema = new mongoose.Schema(
     blockedCount: { type: Number, default: 0 }, // overall: blocked on every buyer queried
     apiErrorCount: { type: Number, default: 0 }, // overall: no buyer gave a usable answer
 
-    // Per-buyer breakdown. buyer1 = LM, buyer2 = IC (fixed mapping) - the
+    // Per-buyer breakdown. buyer1 = LM, buyer2 = HC (fixed mapping) - the
     // anonymized buyer1/buyer2 naming is what publisher-facing UI shows.
     buyerStats: {
       buyer1: {
