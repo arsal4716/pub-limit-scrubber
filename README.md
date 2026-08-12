@@ -110,8 +110,8 @@ Every normalized phone is sent to **both** buyers at the same time:
 
 Network/API errors for a buyer are recorded as `Error` for that buyer
 rather than failing the whole job. Each buyer also has its own daily
-API-call cap (`LM_DAILY_LIMIT` / `IC_DAILY_LIMIT`, default 100,000 each,
-editable in the admin dashboard after first boot) — once a buyer's cap is
+API-call cap, seeded at 100,000 in the DB and from then on only ever
+changed from the admin dashboard (no env var) — once a buyer's cap is
 reached for the day, it's skipped (`Not Checked`) for the rest of that
 buyer's calls, independent of the other buyer and of the global lead limit.
 
@@ -166,9 +166,10 @@ no separate origin to configure.
 See `server/.env.example` for the full list, notably:
 
 - `LM_BUYER_API_URL` / `IC_BUYER_API_URL` — each buyer's API endpoint.
-- `LM_DAILY_LIMIT` / `IC_DAILY_LIMIT` — seed value for each buyer's own daily
-  API-call cap (100,000 each; editable in admin after first boot).
 - `IC_VERTICAL` / `IC_SUBSOURCE_ID` — extra query params IC's API requires.
+- Each buyer's own daily API-call cap is **not** an env var — it's a DB
+  document seeded at 100,000 on first boot, changeable only from the admin
+  dashboard's "Buyer API daily limits" card from then on.
 - `BUYER_API_CONCURRENCY` / `BUYER_API_BATCH_DELAY_MS` — shared rate limit
   knobs (defaults to 20/1200ms ≈ 1000/min per buyer).
 - `DEFAULT_TOTAL_DAILY_LIMIT` — seed value for the global cap (100,000).

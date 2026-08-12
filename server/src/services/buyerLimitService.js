@@ -1,12 +1,14 @@
 const BuyerConfig = require("../models/BuyerConfig");
 const BuyerUsage = require("../models/BuyerUsage");
-const env = require("../config/env");
 const { todayKey } = require("../utils/dateKey");
 const { BUYER_KEYS } = require("../constants/buyers");
 
 const MAX_RESERVE_ATTEMPTS = 5;
 
-const DEFAULT_DAILY_LIMIT = { LM: env.lmDailyLimit, IC: env.icDailyLimit };
+// Seed value used only the first time a buyer's config doc is created.
+// From then on the limit lives entirely in the DB and is only ever
+// changed via the admin API/UI - there is no env var for this.
+const DEFAULT_DAILY_LIMIT = { LM: 100000, IC: 100000 };
 
 async function getOrCreateBuyerConfig(buyerKey) {
   let config = await BuyerConfig.findOne({ key: buyerKey });
