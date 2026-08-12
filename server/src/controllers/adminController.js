@@ -9,7 +9,9 @@ const {
   getUsageSnapshot,
   validatePublisherLimit,
 } = require("../services/limitService");
+const { getBuyerUsageSnapshot, updateBuyerDailyLimit } = require("../services/buyerLimitService");
 const { todayKey } = require("../utils/dateKey");
+const { BUYER_KEYS, BUYER_LABELS } = require("../constants/buyers");
 
 async function getConfig(req, res) {
   const snapshot = await getGlobalUsageSnapshot(todayKey());
@@ -42,6 +44,27 @@ async function updateConfig(req, res) {
   );
 
   res.json({ totalDailyLimit: config.totalDailyLimit });
+}
+
+async function getBuyerConfig(req, res) {
+  const snapshot = await getBuyerUsageSnapshot(todayKey());
+  res.json({
+    dateKey: snapshot.dateKey,
+    buyers: snapshot.buyers.map((b) => ({ ...b, label: BUYER_LABELS[b.key] })),
+  });
+}
+
+async function updateBuyerConfig(req, res) {
+  const { key, dailyLimit } = req.body;
+  if (!BUYER_KEYS.includes(key)) {
+    return res.status(400).json({ error: `key must be one of: ${BUYER_KEYS.join(", ")}` });
+  }
+  if (!Number.isFinite(dailyLimit) || dailyLimit < 0) {
+    return res.status(400).json({ error: "dailyLimit must be a non-negative number" });
+  }
+
+  const config = await updateBuyerDailyLimit(key, dailyLimit);
+  res.json({ key: config.key, dailyLimit: config.dailyLimit, label: BUYER_LABELS[config.key] });
 }
 
 async function listPublishers(req, res) {
@@ -162,6 +185,8 @@ async function deleteJob(req, res) {
 module.exports = {
   getConfig,
   updateConfig,
+  getBuyerConfig,
+  updateBuyerConfig,
   listPublishers,
   createPublisher,
   updatePublisher,

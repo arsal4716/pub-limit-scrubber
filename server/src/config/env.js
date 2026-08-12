@@ -23,10 +23,29 @@ module.exports = {
   adminJwtSecret: process.env.ADMIN_JWT_SECRET || "dev-only-insecure-secret",
   adminJwtExpiresIn: process.env.ADMIN_JWT_EXPIRES_IN || "12h",
 
-  buyerApiUrl:
-    process.env.BUYER_API_URL ||
-    "https://bid.callgrid.com/api/bid/cmn6507vj00vz06juii3memo2?CallerId=",
-  buyerApiTimeoutMs: toInt(process.env.BUYER_API_TIMEOUT_MS, 10000),
+  // LM (ACA) - callgrid. Falls back to the legacy BUYER_API_URL (with any
+  // trailing "?CallerId=" stripped) so existing deployments keep working
+  // until their .env is updated to the LM_* names.
+  lmBuyerApiUrl:
+    process.env.LM_BUYER_API_URL ||
+    (process.env.BUYER_API_URL || "").replace(/[?&]CallerId=$/i, "") ||
+    "https://bid.callgrid.com/api/bid/cmn6507vj00vz06juii3memo2",
+  lmBuyerApiTimeoutMs: toInt(
+    process.env.LM_BUYER_API_TIMEOUT_MS || process.env.BUYER_API_TIMEOUT_MS,
+    10000
+  ),
+  lmDailyLimit: toInt(process.env.LM_DAILY_LIMIT, 100000),
+
+  // IC (ACA) - salesradix.
+  icBuyerApiUrl: process.env.IC_BUYER_API_URL || "https://api.salesradix.com/agentavailability",
+  icBuyerApiTimeoutMs: toInt(process.env.IC_BUYER_API_TIMEOUT_MS, 5000),
+  icVertical: process.env.IC_VERTICAL || "Health",
+  icSubSourceId: toInt(process.env.IC_SUBSOURCE_ID, 3898),
+  icDailyLimit: toInt(process.env.IC_DAILY_LIMIT, 100000),
+
+  // Shared rate limiting: CONCURRENCY phones every BATCH_DELAY_MS, each
+  // phone pinging both buyer APIs at the same time. Default 20/1200ms
+  // sustains ~1000 requests/min against each buyer independently.
   buyerApiConcurrency: toInt(process.env.BUYER_API_CONCURRENCY, 20),
   buyerApiBatchDelayMs: toInt(process.env.BUYER_API_BATCH_DELAY_MS, 1200),
 

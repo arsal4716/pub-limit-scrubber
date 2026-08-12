@@ -55,6 +55,8 @@ export default function JobsTable() {
               <th className="text-right px-4 py-2 font-medium">Sent</th>
               <th className="text-right px-4 py-2 font-medium">Accepted</th>
               <th className="text-right px-4 py-2 font-medium">Blocked</th>
+              <th className="text-right px-4 py-2 font-medium">LM Blocked</th>
+              <th className="text-right px-4 py-2 font-medium">IC Blocked</th>
               <th className="text-left px-4 py-2 font-medium">Status</th>
               <th className="text-right px-4 py-2 font-medium">Actions</th>
             </tr>
@@ -74,6 +76,8 @@ export default function JobsTable() {
                 <td className="px-4 py-2.5 text-right">{job.allowedCount}</td>
                 <td className="px-4 py-2.5 text-right">{job.acceptedCount}</td>
                 <td className="px-4 py-2.5 text-right">{job.blockedCount}</td>
+                <td className="px-4 py-2.5 text-right">{job.buyerStats?.buyer1?.blockedCount ?? 0}</td>
+                <td className="px-4 py-2.5 text-right">{job.buyerStats?.buyer2?.blockedCount ?? 0}</td>
                 <td className="px-4 py-2.5">
                   <StatusBadge status={job.status} />
                 </td>
@@ -100,7 +104,7 @@ export default function JobsTable() {
             ))}
             {jobs.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-4 py-6 text-center text-slate-400">
+                <td colSpan={12} className="px-4 py-6 text-center text-slate-400">
                   No scrub jobs yet.
                 </td>
               </tr>

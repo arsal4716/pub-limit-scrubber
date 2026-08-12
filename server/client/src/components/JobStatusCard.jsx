@@ -88,6 +88,8 @@ export default function JobStatusCard({ jobId }) {
             <Stat label="Blocked/duplicate" value={job.blockedCount} />
             <Stat label="Invalid phone" value={job.invalidPhoneCount} />
             <Stat label="Dupes in file" value={job.duplicateInFileCount} />
+            <Stat label="Buyer 1 blocked" value={job.buyerStats?.buyer1?.blockedCount} />
+            <Stat label="Buyer 2 blocked" value={job.buyerStats?.buyer2?.blockedCount} />
           </div>
           <a
             href={downloadUrl(job.id)}

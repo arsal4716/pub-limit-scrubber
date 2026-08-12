@@ -34,9 +34,26 @@ const scrubJobSchema = new mongoose.Schema(
     skippedOverLimitCount: { type: Number, default: 0 },
 
     processedCount: { type: Number, default: 0 }, // progress counter
-    acceptedCount: { type: Number, default: 0 }, // Duplicate: No
-    blockedCount: { type: Number, default: 0 }, // Duplicate: Yes (code 4007)
-    apiErrorCount: { type: Number, default: 0 }, // Duplicate: Error
+    acceptedCount: { type: Number, default: 0 }, // overall: available on at least one buyer
+    blockedCount: { type: Number, default: 0 }, // overall: blocked on every buyer queried
+    apiErrorCount: { type: Number, default: 0 }, // overall: no buyer gave a usable answer
+
+    // Per-buyer breakdown. buyer1 = LM, buyer2 = IC (fixed mapping) - the
+    // anonymized buyer1/buyer2 naming is what publisher-facing UI shows.
+    buyerStats: {
+      buyer1: {
+        blockedCount: { type: Number, default: 0 },
+        availableCount: { type: Number, default: 0 },
+        errorCount: { type: Number, default: 0 },
+        notCheckedCount: { type: Number, default: 0 }, // skipped: buyer's own daily limit reached
+      },
+      buyer2: {
+        blockedCount: { type: Number, default: 0 },
+        availableCount: { type: Number, default: 0 },
+        errorCount: { type: Number, default: 0 },
+        notCheckedCount: { type: Number, default: 0 },
+      },
+    },
 
     estimatedSeconds: { type: Number, default: 0 },
 

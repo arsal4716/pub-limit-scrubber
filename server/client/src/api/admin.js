@@ -10,6 +10,16 @@ export async function updateGlobalConfig(totalDailyLimit) {
   return data;
 }
 
+export async function fetchBuyerConfig() {
+  const { data } = await client.get("/admin/buyer-config");
+  return data;
+}
+
+export async function updateBuyerConfig(key, dailyLimit) {
+  const { data } = await client.put("/admin/buyer-config", { key, dailyLimit });
+  return data;
+}
+
 export async function fetchAdminPublishers() {
   const { data } = await client.get("/admin/publishers");
   return data;
