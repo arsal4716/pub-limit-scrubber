@@ -120,19 +120,21 @@ export default function UploadPage() {
 
           {uploadRequirements && (
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-              <p className="font-medium text-slate-700">Your file's phone column header must be one of:</p>
+              <p className="font-medium text-slate-700">Your file needs a phone column, e.g.:</p>
               <p className="mt-1 font-mono text-xs text-slate-500">
                 {uploadRequirements.acceptedPhoneHeaders.join(", ")}
               </p>
-              <p className="mt-3 font-medium text-slate-700">
-                Your file must also include a state column (2-letter code, e.g. "AZ") — one of:
-              </p>
+              <p className="mt-3 font-medium text-slate-700">...and a state column, e.g.:</p>
               <p className="mt-1 font-mono text-xs text-slate-500">
                 {uploadRequirements.acceptedStateHeaders.join(", ")}
               </p>
               <p className="mt-2">
-                Comma- or semicolon-delimited CSV files are both supported (delimiter is detected
-                automatically). Header names must match exactly, including case.
+                Column headers are matched automatically regardless of case or spacing (e.g.
+                "Phone Number", "phone_number", and "PHONENUMBER" all work the same). Any US phone
+                format is accepted (with or without dashes, parentheses, or a leading 1). States can
+                be entered as a 2-letter code or a full name, in any case — "AZ", "az", and
+                "Arizona" all work. Comma- or semicolon-delimited CSV files are both supported
+                (delimiter is detected automatically).
               </p>
             </div>
           )}
