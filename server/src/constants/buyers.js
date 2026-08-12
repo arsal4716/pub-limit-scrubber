@@ -13,4 +13,10 @@ const BUYER_SLOT = {
   HC: "buyer2",
 };
 
-module.exports = { BUYER_KEYS, BUYER_LABELS, BUYER_SLOT };
+// Publisher-facing display text for each slot - never the real buyer name.
+const BUYER_SLOT_LABEL = {
+  buyer1: "Buyer 1",
+  buyer2: "Buyer 2",
+};
+
+module.exports = { BUYER_KEYS, BUYER_LABELS, BUYER_SLOT, BUYER_SLOT_LABEL };

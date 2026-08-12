@@ -1,6 +1,7 @@
 const fs = require("fs");
 const { parse, format } = require("fast-csv");
 const { normalizePhone, extractPhoneFromRow, extractStateFromRow } = require("./phoneUtils");
+const { BUYER_SLOT_LABEL } = require("../constants/buyers");
 
 // Pass 1: stream the uploaded file once to discover the total row count and
 // the ordered list of unique, valid US phone numbers ("first occurrence"
@@ -84,10 +85,11 @@ function writeOutputFile(
         const normalized = normalizePhone(extractPhoneFromRow(row));
 
         let scrubStatus;
-        let result = {
-          overallStatus: "",
-          buyers: { LM: { status: "", message: "" }, HC: { status: "", message: "" } },
-        };
+        // Each phone is routed to exactly one buyer, so there's a single
+        // status/message pair per row - `BuyerAssigned` names the slot
+        // (anonymized "Buyer 1"/"Buyer 2", never the real buyer) that
+        // actually checked it.
+        let result = { slot: "", status: "", message: "" };
 
         if (!normalized) {
           scrubStatus = "Invalid Phone";
@@ -111,13 +113,9 @@ function writeOutputFile(
           ...row,
           NormalizedPhone: normalized || "",
           ScrubStatus: scrubStatus,
-          // Buyer1/Buyer2 is an anonymized, fixed mapping - never expose
-          // which real buyer (LM/HC) each slot corresponds to here.
-          Buyer1Status: result.buyers.LM.status,
-          Buyer1Message: result.buyers.LM.message,
-          Buyer2Status: result.buyers.HC.status,
-          Buyer2Message: result.buyers.HC.message,
-          OverallStatus: result.overallStatus,
+          BuyerAssigned: BUYER_SLOT_LABEL[result.slot] || "",
+          BuyerStatus: result.status,
+          BuyerMessage: result.message,
         });
       })
       .on("end", () => {
