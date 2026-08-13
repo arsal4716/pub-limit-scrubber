@@ -36,10 +36,13 @@ module.exports = {
   ),
 
   // HC (ACA) - NextGen Insurance Solutions. Requires a per-lead state code
-  // (read from the CSV's state column - see phoneUtils.extractStateFromRow).
+  // (read from the CSV's state column - see phoneUtils.extractStateFromRow)
+  // and an API key sent as the `x-vendor-api-key` header - without it every
+  // call fails with 401 Unauthorized.
   hcBuyerApiUrl:
     process.env.HC_BUYER_API_URL || "https://api.nextgeninsurancesolutionsinc.com/vendor-availability",
   hcBuyerApiTimeoutMs: toInt(process.env.HC_BUYER_API_TIMEOUT_MS, 5000),
+  hcVendorApiKey: process.env.HC_VENDOR_API_KEY || "",
 
   // Per-buyer rate limiting: CONCURRENCY phones every BATCH_DELAY_MS. LM
   // and HC each run their own independent, concurrently-running loop over
