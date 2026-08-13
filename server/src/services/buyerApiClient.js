@@ -38,6 +38,7 @@ async function pingHC(phone, state) {
   try {
     const response = await axios.get(env.hcBuyerApiUrl, {
       params: { state, caller_id: `1${phone}` },
+      headers: { "x-vendor-api-key": env.hcVendorApiKey },
       timeout: env.hcBuyerApiTimeoutMs,
     });
     const suppressed = response.data?.phs_suppressed === true;

@@ -119,13 +119,15 @@ halves are processed concurrently, each in its own pacing loop:
   as available.
 - **HC (ACA — NextGen Insurance Solutions)**, configured via
   `HC_BUYER_API_URL`: `GET {HC_BUYER_API_URL}?state={state}&caller_id=1{phone}`,
-  where `state` is that lead's state from the CSV (abbreviation or full
-  name, any case). Duplicate/suppression is read solely from the response's
-  `phs_suppressed` field (`true` means blocked) — the capacity/routing
-  fields in the same response (`accept`, `status`, `agents`, etc.) are
-  informational only and don't affect the scrub result. A lead with no
-  state value is recorded as `Error` for HC without calling the API (and
-  without spending HC's daily quota) rather than guessing a state.
+  with an `x-vendor-api-key: {HC_VENDOR_API_KEY}` header — omitting it
+  fails every call with `401 Unauthorized`. `state` is that lead's state
+  from the CSV (abbreviation or full name, any case). Duplicate/suppression
+  is read solely from the response's `phs_suppressed` field (`true` means
+  blocked) — the capacity/routing fields in the same response (`accept`,
+  `status`, `agents`, etc.) are informational only and don't affect the
+  scrub result. A lead with no state value is recorded as `Error` for HC
+  without calling the API (and without spending HC's daily quota) rather
+  than guessing a state.
 
 Network/API errors are recorded as `Error` for that phone rather than
 failing the whole job.
@@ -211,6 +213,10 @@ no separate origin to configure.
 See `server/.env.example` for the full list, notably:
 
 - `LM_BUYER_API_URL` / `HC_BUYER_API_URL` — each buyer's API endpoint.
+- `HC_VENDOR_API_KEY` — required for HC; sent as the `x-vendor-api-key`
+  header on every HC call. Missing or wrong values fail with `401
+  Unauthorized`. Never commit the real value - it belongs only in your
+  actual (gitignored) `server/.env`.
 - Publisher daily limits are **not** env vars - each is set per publisher
   from the admin dashboard's Publishers tab (split 50/50 between buyers
   automatically at scrub time).
