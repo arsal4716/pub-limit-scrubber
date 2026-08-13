@@ -47,13 +47,10 @@ function analyzeFile(inputPath, delimiter = ",") {
 // Pass 2: re-stream the original file and write every original row back out
 // unchanged, plus appended scrub columns - so the original data is never
 // lost, even for rows that were skipped or invalid. `phoneResults` maps a
-// normalized phone to its buyer API result; `phonesToProcessSet` is the
-// subset of unique phones that were actually within the reserved quota.
-function writeOutputFile(
-  inputPath,
-  outputPath,
-  { phoneResults, phonesToProcessSet, delimiter = "," }
-) {
+// normalized phone to its buyer result - every unique, valid phone always
+// gets one (possibly "Not Checked" if that publisher's buyer allotment was
+// exhausted), since there's no pre-flight slicing anymore.
+function writeOutputFile(inputPath, outputPath, { phoneResults, delimiter = "," }) {
   return new Promise((resolve, reject) => {
     const seenInPass2 = new Set();
     const writeStream = fs.createWriteStream(outputPath);
@@ -101,11 +98,10 @@ function writeOutputFile(
           if (apiResult) {
             result = apiResult;
             scrubStatus = isRepeat ? "Duplicate In File (Processed)" : "Processed";
-          } else if (phonesToProcessSet.has(normalized)) {
-            // Defensive fallback: should always have a result if it was queued to process.
-            scrubStatus = "Not Processed";
           } else {
-            scrubStatus = isRepeat ? "Duplicate In File" : "Skipped - Daily Limit Reached";
+            // Defensive fallback: every unique, valid phone should always
+            // have a result, since the full list is always processed.
+            scrubStatus = isRepeat ? "Duplicate In File" : "Not Processed";
           }
         }
 

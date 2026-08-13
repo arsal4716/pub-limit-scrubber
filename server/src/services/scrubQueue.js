@@ -2,7 +2,6 @@ const path = require("path");
 const ScrubJob = require("../models/ScrubJob");
 const { analyzeFile, writeOutputFile } = require("./csvService");
 const { processPhonesSplit, leadsPerMinuteRate } = require("./buyerApiClient");
-const { reserveQuota } = require("./limitService");
 const { detectDelimiter } = require("../utils/csvDelimiter");
 
 function applyBuyerStat(stat, status) {
@@ -19,8 +18,7 @@ function applyResultToJob(job, result) {
   if (result.status === "Blocked") job.blockedCount += 1;
   else if (result.status === "Error") job.apiErrorCount += 1;
   else if (result.status === "Available") job.acceptedCount += 1;
-  // "Not Checked" (that phone's assigned buyer was out of daily quota)
-  // isn't counted as accepted/blocked/error - only reflected in buyerStats.
+  else if (result.status === "Not Checked") job.skippedOverLimitCount += 1;
 
   applyBuyerStat(job.buyerStats[result.slot], result.status);
 }
@@ -79,19 +77,18 @@ async function runJob(jobId) {
   job.duplicateInFileCount = analysis.duplicateInFileCount;
   job.uniquePhoneCount = analysis.uniquePhonesOrdered.length;
 
-  let allowedCount = job.allowedCount;
-  if (!job.quotaReserved) {
-    allowedCount = await reserveQuota(job.publisherId, analysis.uniquePhonesOrdered.length);
-    job.allowedCount = allowedCount;
-    job.quotaReserved = true;
-  }
-  job.skippedOverLimitCount = analysis.uniquePhonesOrdered.length - allowedCount;
-  job.estimatedSeconds = Math.ceil((allowedCount / leadsPerMinuteRate()) * 60);
+  // Every unique phone is attempted - there's no pre-flight pool
+  // reservation anymore. Each buyer's own per-publisher daily allotment
+  // naturally caps how many actually get checked; anything over that
+  // comes back "Not Checked" per phone (tallied into skippedOverLimitCount
+  // as results arrive) rather than being sliced off upfront.
+  job.allowedCount = analysis.uniquePhonesOrdered.length;
+  job.skippedOverLimitCount = 0;
+  job.estimatedSeconds = Math.ceil((job.allowedCount / leadsPerMinuteRate()) * 60);
   job.status = "processing";
   await job.save();
 
-  const phonesToProcess = analysis.uniquePhonesOrdered.slice(0, allowedCount);
-  const phonesToProcessSet = new Set(phonesToProcess);
+  const phonesToProcess = analysis.uniquePhonesOrdered;
   const phoneResults = new Map();
 
   if (phonesToProcess.length > 0) {
@@ -104,6 +101,7 @@ async function runJob(jobId) {
     await processPhonesSplit(
       phonesToProcess,
       analysis.phoneStates,
+      job.publisherId,
       (phone, result) => {
         phoneResults.set(phone, result);
         applyResultToJob(job, result);
@@ -117,7 +115,7 @@ async function runJob(jobId) {
   }
 
   const outputPath = path.join(path.dirname(job.inputPath), "output.csv");
-  await writeOutputFile(job.inputPath, outputPath, { phoneResults, phonesToProcessSet, delimiter });
+  await writeOutputFile(job.inputPath, outputPath, { phoneResults, delimiter });
 
   job.outputPath = outputPath;
   job.status = "completed";
@@ -126,8 +124,10 @@ async function runJob(jobId) {
 }
 
 // On boot, resume any jobs left mid-flight by a previous process crash.
-// Buyer API checks are read-only/idempotent, so re-running analysis and
-// (already-reserved) quota is safe; `quotaReserved` prevents double-reserving.
+// Buyer API checks are read-only/idempotent, so re-running analysis is
+// safe, though any buyer calls already made before the crash are re-sent
+// (and re-counted against that publisher's daily allotment) - an accepted
+// tradeoff for not needing to persist partial per-phone results.
 async function recoverInterruptedJobs() {
   const stuck = await ScrubJob.find({
     status: { $in: ["queued", "analyzing", "processing"] },
@@ -141,6 +141,7 @@ async function recoverInterruptedJobs() {
     job.acceptedCount = 0;
     job.blockedCount = 0;
     job.apiErrorCount = 0;
+    job.skippedOverLimitCount = 0;
     job.buyerStats = {
       buyer1: { blockedCount: 0, availableCount: 0, errorCount: 0, notCheckedCount: 0 },
       buyer2: { blockedCount: 0, availableCount: 0, errorCount: 0, notCheckedCount: 0 },

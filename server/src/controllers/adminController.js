@@ -2,24 +2,26 @@ const fs = require("fs");
 const path = require("path");
 const Publisher = require("../models/Publisher");
 const ScrubJob = require("../models/ScrubJob");
-const GlobalConfig = require("../models/GlobalConfig");
+const { getOrCreateGlobalConfig, updateGlobalDailyLimit } = require("../services/limitService");
 const {
-  getOrCreateGlobalConfig,
-  getGlobalUsageSnapshot,
-  getUsageSnapshot,
-  validatePublisherLimit,
-} = require("../services/limitService");
-const { getBuyerUsageSnapshot, updateBuyerDailyLimit } = require("../services/buyerLimitService");
+  getCapacityInfo,
+  getBuyerAdminSnapshot,
+  updateBuyerDailyLimit,
+  validateGlobalLimitChange,
+  validatePublisherActivation,
+  getPublisherUsageSnapshot,
+} = require("../services/buyerLimitService");
 const { todayKey } = require("../utils/dateKey");
 const { BUYER_KEYS, BUYER_LABELS } = require("../constants/buyers");
 
 async function getConfig(req, res) {
-  const snapshot = await getGlobalUsageSnapshot(todayKey());
+  const [globalConfig, capacity] = await Promise.all([getOrCreateGlobalConfig(), getCapacityInfo()]);
   res.json({
-    totalDailyLimit: snapshot.totalDailyLimit,
-    usedToday: snapshot.globalUsed,
-    remainingToday: snapshot.globalRemaining,
-    dateKey: snapshot.dateKey,
+    totalDailyLimit: globalConfig.totalDailyLimit,
+    activePublisherCount: capacity.activePublisherCount,
+    perPublisherCapacity: capacity.perPublisherCapacity,
+    maxSupportablePublishers: capacity.maxSupportablePublishers,
+    dateKey: todayKey(),
   });
 }
 
@@ -29,27 +31,15 @@ async function updateConfig(req, res) {
     return res.status(400).json({ error: "totalDailyLimit must be a non-negative number" });
   }
 
-  const publishers = await Publisher.find({ active: true });
-  const sumOfLimits = publishers.reduce((sum, p) => sum + p.dailyLimit, 0);
-  if (sumOfLimits > totalDailyLimit) {
-    return res.status(400).json({
-      error: `Cannot set total limit below the sum of active publisher limits (${sumOfLimits})`,
-    });
-  }
-
-  const config = await GlobalConfig.findOneAndUpdate(
-    { key: "global" },
-    { totalDailyLimit },
-    { upsert: true, new: true }
-  );
-
+  await validateGlobalLimitChange(totalDailyLimit);
+  const config = await updateGlobalDailyLimit(totalDailyLimit);
   res.json({ totalDailyLimit: config.totalDailyLimit });
 }
 
 async function getBuyerConfig(req, res) {
-  const snapshot = await getBuyerUsageSnapshot(todayKey());
+  const snapshot = await getBuyerAdminSnapshot(todayKey());
   res.json({
-    dateKey: snapshot.dateKey,
+    ...snapshot,
     buyers: snapshot.buyers.map((b) => ({ ...b, label: BUYER_LABELS[b.key] })),
   });
 }
@@ -73,14 +63,15 @@ async function listPublishers(req, res) {
 
   const withUsage = await Promise.all(
     publishers.map(async (p) => {
-      const snapshot = await getUsageSnapshot(p._id, dateKey);
+      const snapshot = await getPublisherUsageSnapshot(p._id, dateKey);
       return {
         id: p._id,
         name: p.name,
-        dailyLimit: p.dailyLimit,
+        dailyLimit: snapshot.dailyLimit, // derived: sum of both buyers' per-publisher allotments
         active: p.active,
-        usedToday: snapshot.publisherUsed,
-        remainingToday: snapshot.publisherRemaining,
+        usedToday: snapshot.usedToday,
+        remainingToday: snapshot.remainingToday,
+        buyers: snapshot.buyers,
         createdAt: p.createdAt,
       };
     })
@@ -90,55 +81,42 @@ async function listPublishers(req, res) {
 }
 
 async function createPublisher(req, res) {
-  const { name, dailyLimit } = req.body;
+  const { name } = req.body;
   if (!name || !name.trim()) {
     return res.status(400).json({ error: "name is required" });
   }
-  if (!Number.isFinite(dailyLimit) || dailyLimit < 0) {
-    return res.status(400).json({ error: "dailyLimit must be a non-negative number" });
-  }
-
-  const config = await getOrCreateGlobalConfig();
-  await validatePublisherLimit({
-    publisherIdBeingEdited: null,
-    newLimit: dailyLimit,
-    totalDailyLimit: config.totalDailyLimit,
-  });
 
   const existing = await Publisher.findOne({ slug: Publisher.toSlug(name) });
   if (existing) {
     return res.status(409).json({ error: "A publisher with this name already exists" });
   }
 
-  const publisher = await Publisher.create({ name: name.trim(), dailyLimit });
-  res.status(201).json({ id: publisher._id, name: publisher.name, dailyLimit: publisher.dailyLimit });
+  // New publishers default to active - validate that one more active
+  // publisher still fits under the global capacity ceiling.
+  const activeCount = await Publisher.countDocuments({ active: true });
+  await validatePublisherActivation(activeCount + 1);
+
+  const publisher = await Publisher.create({ name: name.trim() });
+  res.status(201).json({ id: publisher._id, name: publisher.name, active: publisher.active });
 }
 
 async function updatePublisher(req, res) {
   const { id } = req.params;
-  const { dailyLimit, active, name } = req.body;
+  const { active, name } = req.body;
 
   const publisher = await Publisher.findById(id);
   if (!publisher) return res.status(404).json({ error: "Publisher not found" });
 
-  if (dailyLimit !== undefined) {
-    if (!Number.isFinite(dailyLimit) || dailyLimit < 0) {
-      return res.status(400).json({ error: "dailyLimit must be a non-negative number" });
-    }
-    const config = await getOrCreateGlobalConfig();
-    await validatePublisherLimit({
-      publisherIdBeingEdited: id,
-      newLimit: dailyLimit,
-      totalDailyLimit: config.totalDailyLimit,
-    });
-    publisher.dailyLimit = dailyLimit;
+  if (active !== undefined && !!active && !publisher.active) {
+    const activeCount = await Publisher.countDocuments({ active: true });
+    await validatePublisherActivation(activeCount + 1);
   }
 
   if (active !== undefined) publisher.active = !!active;
   if (name !== undefined && name.trim()) publisher.name = name.trim();
 
   await publisher.save();
-  res.json({ id: publisher._id, name: publisher.name, dailyLimit: publisher.dailyLimit, active: publisher.active });
+  res.json({ id: publisher._id, name: publisher.name, active: publisher.active });
 }
 
 async function listJobs(req, res) {

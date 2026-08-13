@@ -48,6 +48,9 @@ module.exports = {
   buyerApiConcurrency: toInt(process.env.BUYER_API_CONCURRENCY, 20),
   buyerApiBatchDelayMs: toInt(process.env.BUYER_API_BATCH_DELAY_MS, 1200),
 
-  defaultTotalDailyLimit: toInt(process.env.DEFAULT_TOTAL_DAILY_LIMIT, 100000),
+  // Must comfortably exceed a single publisher's derived capacity (LM's
+  // 100,000 default + HC's 100,000 default = 200,000) or the very first
+  // publisher can never be activated on a fresh install.
+  defaultTotalDailyLimit: toInt(process.env.DEFAULT_TOTAL_DAILY_LIMIT, 1000000),
   limitResetTimezone: process.env.LIMIT_RESET_TIMEZONE || "America/New_York",
 };

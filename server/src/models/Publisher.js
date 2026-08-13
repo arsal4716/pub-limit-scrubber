@@ -15,12 +15,6 @@ const publisherSchema = new mongoose.Schema(
       unique: true,
       index: true,
     },
-    dailyLimit: {
-      type: Number,
-      required: true,
-      min: 0,
-      default: 0,
-    },
     active: {
       type: Boolean,
       default: true,

@@ -1,5 +1,5 @@
 const Publisher = require("../models/Publisher");
-const { getUsageSnapshot } = require("../services/limitService");
+const { getPublisherUsageSnapshot } = require("../services/buyerLimitService");
 const { todayKey } = require("../utils/dateKey");
 
 // Validates a single, exact publisher name - never lists publishers, so it
@@ -20,14 +20,14 @@ async function validatePublisher(req, res) {
     });
   }
 
-  const snapshot = await getUsageSnapshot(publisher._id, todayKey());
+  const snapshot = await getPublisherUsageSnapshot(publisher._id, todayKey());
 
   res.json({
     valid: true,
     name: publisher.name,
-    dailyLimit: snapshot.publisherDailyLimit,
-    usedToday: snapshot.publisherUsed,
-    remainingToday: snapshot.publisherRemaining,
+    dailyLimit: snapshot.dailyLimit,
+    usedToday: snapshot.usedToday,
+    remainingToday: snapshot.remainingToday,
     dateKey: snapshot.dateKey,
   });
 }
