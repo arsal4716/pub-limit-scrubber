@@ -49,10 +49,13 @@ async function runLoop() {
     try {
       await runJob(jobId);
     } catch (err) {
+      // Full detail goes to the server log for debugging; publishers only
+      // ever see a generic message - internal errors (DB, network, etc.)
+      // should never leak raw driver/library text to end users.
       console.error(`[scrubQueue] job ${jobId} failed:`, err);
       await ScrubJob.findByIdAndUpdate(jobId, {
         status: "failed",
-        errorMessage: err.message,
+        errorMessage: "An unexpected error occurred while processing this file. Please try again or contact an admin.",
       });
     }
   }
