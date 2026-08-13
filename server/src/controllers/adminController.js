@@ -2,25 +2,22 @@ const fs = require("fs");
 const path = require("path");
 const Publisher = require("../models/Publisher");
 const ScrubJob = require("../models/ScrubJob");
-const { getOrCreateGlobalConfig, updateGlobalDailyLimit } = require("../services/limitService");
+const { updateGlobalDailyLimit } = require("../services/limitService");
 const {
-  getCapacityInfo,
-  getBuyerAdminSnapshot,
-  updateBuyerDailyLimit,
   validateGlobalLimitChange,
-  validatePublisherActivation,
+  validatePublisherLimitChange,
   getPublisherUsageSnapshot,
+  getGlobalCapacitySnapshot,
 } = require("../services/buyerLimitService");
 const { todayKey } = require("../utils/dateKey");
-const { BUYER_KEYS, BUYER_LABELS } = require("../constants/buyers");
 
 async function getConfig(req, res) {
-  const [globalConfig, capacity] = await Promise.all([getOrCreateGlobalConfig(), getCapacityInfo()]);
+  const snapshot = await getGlobalCapacitySnapshot();
   res.json({
-    totalDailyLimit: globalConfig.totalDailyLimit,
-    activePublisherCount: capacity.activePublisherCount,
-    perPublisherCapacity: capacity.perPublisherCapacity,
-    maxSupportablePublishers: capacity.maxSupportablePublishers,
+    totalDailyLimit: snapshot.totalDailyLimit,
+    usedToday: snapshot.committed, // sum of active publishers' own daily limits
+    remainingToday: snapshot.remaining,
+    activePublisherCount: snapshot.activePublisherCount,
     dateKey: todayKey(),
   });
 }
@@ -36,27 +33,6 @@ async function updateConfig(req, res) {
   res.json({ totalDailyLimit: config.totalDailyLimit });
 }
 
-async function getBuyerConfig(req, res) {
-  const snapshot = await getBuyerAdminSnapshot(todayKey());
-  res.json({
-    ...snapshot,
-    buyers: snapshot.buyers.map((b) => ({ ...b, label: BUYER_LABELS[b.key] })),
-  });
-}
-
-async function updateBuyerConfig(req, res) {
-  const { key, dailyLimit } = req.body;
-  if (!BUYER_KEYS.includes(key)) {
-    return res.status(400).json({ error: `key must be one of: ${BUYER_KEYS.join(", ")}` });
-  }
-  if (!Number.isFinite(dailyLimit) || dailyLimit < 0) {
-    return res.status(400).json({ error: "dailyLimit must be a non-negative number" });
-  }
-
-  const config = await updateBuyerDailyLimit(key, dailyLimit);
-  res.json({ key: config.key, dailyLimit: config.dailyLimit, label: BUYER_LABELS[config.key] });
-}
-
 async function listPublishers(req, res) {
   const publishers = await Publisher.find().sort({ name: 1 });
   const dateKey = todayKey();
@@ -67,11 +43,11 @@ async function listPublishers(req, res) {
       return {
         id: p._id,
         name: p.name,
-        dailyLimit: snapshot.dailyLimit, // derived: sum of both buyers' per-publisher allotments
+        dailyLimit: p.dailyLimit,
         active: p.active,
         usedToday: snapshot.usedToday,
         remainingToday: snapshot.remainingToday,
-        buyers: snapshot.buyers,
+        buyers: snapshot.buyers, // per-buyer half-limit + usage, informational
         createdAt: p.createdAt,
       };
     })
@@ -81,9 +57,12 @@ async function listPublishers(req, res) {
 }
 
 async function createPublisher(req, res) {
-  const { name } = req.body;
+  const { name, dailyLimit } = req.body;
   if (!name || !name.trim()) {
     return res.status(400).json({ error: "name is required" });
+  }
+  if (!Number.isFinite(dailyLimit) || dailyLimit < 0) {
+    return res.status(400).json({ error: "dailyLimit must be a non-negative number" });
   }
 
   const existing = await Publisher.findOne({ slug: Publisher.toSlug(name) });
@@ -91,32 +70,40 @@ async function createPublisher(req, res) {
     return res.status(409).json({ error: "A publisher with this name already exists" });
   }
 
-  // New publishers default to active - validate that one more active
-  // publisher still fits under the global capacity ceiling.
-  const activeCount = await Publisher.countDocuments({ active: true });
-  await validatePublisherActivation(activeCount + 1);
+  await validatePublisherLimitChange({
+    publisherIdBeingEdited: null,
+    currentLimit: null,
+    newLimit: dailyLimit,
+  });
 
-  const publisher = await Publisher.create({ name: name.trim() });
-  res.status(201).json({ id: publisher._id, name: publisher.name, active: publisher.active });
+  const publisher = await Publisher.create({ name: name.trim(), dailyLimit });
+  res.status(201).json({ id: publisher._id, name: publisher.name, dailyLimit: publisher.dailyLimit });
 }
 
 async function updatePublisher(req, res) {
   const { id } = req.params;
-  const { active, name } = req.body;
+  const { dailyLimit, active, name } = req.body;
 
   const publisher = await Publisher.findById(id);
   if (!publisher) return res.status(404).json({ error: "Publisher not found" });
 
-  if (active !== undefined && !!active && !publisher.active) {
-    const activeCount = await Publisher.countDocuments({ active: true });
-    await validatePublisherActivation(activeCount + 1);
+  if (dailyLimit !== undefined) {
+    if (!Number.isFinite(dailyLimit) || dailyLimit < 0) {
+      return res.status(400).json({ error: "dailyLimit must be a non-negative number" });
+    }
+    await validatePublisherLimitChange({
+      publisherIdBeingEdited: id,
+      currentLimit: publisher.dailyLimit,
+      newLimit: dailyLimit,
+    });
+    publisher.dailyLimit = dailyLimit;
   }
 
   if (active !== undefined) publisher.active = !!active;
   if (name !== undefined && name.trim()) publisher.name = name.trim();
 
   await publisher.save();
-  res.json({ id: publisher._id, name: publisher.name, active: publisher.active });
+  res.json({ id: publisher._id, name: publisher.name, dailyLimit: publisher.dailyLimit, active: publisher.active });
 }
 
 async function listJobs(req, res) {
@@ -163,8 +150,6 @@ async function deleteJob(req, res) {
 module.exports = {
   getConfig,
   updateConfig,
-  getBuyerConfig,
-  updateBuyerConfig,
   listPublishers,
   createPublisher,
   updatePublisher,

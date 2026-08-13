@@ -109,13 +109,9 @@ export default function UploadPage() {
               {validation.remainingToday === 1 ? "" : "s"} today.
             </p>
             <p className="mt-1 text-sm text-indigo-800">
-              Your daily limit is {validation.dailyLimit.toLocaleString()} leads
-              {validation.usedToday > 0 &&
-                ` (${validation.usedToday.toLocaleString()} already used today)`}
-              . Every unique, valid lead in your file is attempted, split roughly 50/50 between our
-              two buyers for faster processing — leads beyond your remaining daily limit are marked{" "}
-              <strong>Not Checked</strong> in the output rather than being scrubbed twice as fast at
-              your expense.
+              Daily limit: {validation.dailyLimit.toLocaleString()} leads
+              {validation.usedToday > 0 && ` (${validation.usedToday.toLocaleString()} used today)`}.
+              Leads past your limit are marked <strong>Not Checked</strong> in the output.
             </p>
           </div>
 

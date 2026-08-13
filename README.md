@@ -1,11 +1,10 @@
 # Pub Limit Scrubber
 
 A MERN app for scrubbing publisher lead files against two rate-limited buyer
-APIs (LM and HC). Each buyer grants every publisher its own daily
-allotment (not a pool shared across publishers), and a global daily
-capacity ceiling caps how many publishers those allotments can support.
-Includes an admin dashboard for managing limits and reviewing scrub
-history.
+APIs (LM and HC). Each publisher has its own admin-set daily limit, split
+50/50 between the two buyers when scrubbing, and a global daily capacity
+ceiling caps the sum of every active publisher's limit. Includes an admin
+dashboard for managing limits and reviewing scrub history.
 
 ## How it works
 
@@ -13,9 +12,7 @@ history.
    validated against the admin-managed publisher list before they can move
    on — an unrecognized or disabled name is blocked right there with a clear
    error, and never reaches the upload step. Once validated, they see their
-   daily limit (the sum of both buyers' per-publisher allotments — e.g.
-   100,000 from each buyer = 200,000/day) and how many leads they can still
-   scrub today.
+   own admin-set daily limit and how many leads they can still scrub today.
 2. They upload a CSV lead file (any size — files are streamed, not loaded
    into memory; comma- or semicolon-delimited files are both auto-detected).
    Column headers are matched automatically regardless of case, spacing,
@@ -30,8 +27,8 @@ history.
    appear. Non-US-format phones are marked invalid and never sent to the
    buyer APIs.
 3. There's no upfront pool reservation — every unique phone in the file is
-   attempted. Capacity is enforced live, per buyer, per publisher (see
-   "Limits: buyer allotments and global capacity" below).
+   attempted. Capacity is enforced live, per publisher (see "Limits: a
+   daily limit per publisher, split 50/50" below).
 4. LM and HC both scrub against the same underlying suppression data, so
    checking a phone against both would be redundant. Instead, the unique
    phones are **split roughly in half** (first half → buyer1/LM, second
@@ -39,10 +36,11 @@ history.
    become 45,000 to each buyer) and both halves are processed
    **concurrently**, each throttled to ~1000 requests/minute (20 phones
    every 1.2s per buyer) — so total throughput is ~2000 unique phones/minute
-   combined, not 1000. If a phone's assigned buyer is out of *this
-   publisher's* daily allotment from that buyer, that phone is left
-   unprocessed (`Not Checked`) rather than being redirected to the other
-   buyer.
+   combined, not 1000. A publisher's own daily limit is split the same way
+   (a 100,000 limit means 50,000 checks against each buyer); once a
+   publisher has used up its half from a buyer today, any phone still
+   routed to that buyer is left `Not Checked` rather than redirected to the
+   other buyer.
 5. The server writes the **original file back out unchanged**, with columns
    appended: `NormalizedPhone`, `ScrubStatus` (`Processed`, `Duplicate In
    File`, or `Invalid Phone`), `BuyerAssigned` (`Buyer 1` or `Buyer 2` — an
@@ -57,23 +55,21 @@ history.
    shows an ETA (`leads remaining / ~2000 per minute combined`). A
    shareable `/status/:jobId` link is also shown so they can check back
    later.
-7. Every buyer allotment resets at midnight **America/New_York**
+7. Every publisher's usage resets at midnight **America/New_York**
    (configurable) — usage is tracked per calendar day in that timezone, so
    nothing needs a cron job to "reset".
-8. Admins log in to `/admin` to set each buyer's daily allotment (LM/HC,
-   shown by real name — the amount EVERY publisher individually gets from
-   that buyer, defaults to 100,000 each), set the global daily capacity
-   ceiling (validated so `active publishers × (LM limit + HC limit)` can
-   never exceed it), add/enable/disable publishers (activating one is
-   rejected if it would breach that ceiling), and browse every scrub job
-   with full stats (including per-buyer blocked counts), a download link,
-   and a delete action (removes the job record plus its input/output files;
+8. Admins log in to `/admin` to add publishers with their own daily limit,
+   edit any publisher's limit later, enable/disable publishers, set the
+   global daily capacity ceiling (validated so the sum of active
+   publishers' limits can never exceed it), and browse every scrub job with
+   full stats (including per-buyer blocked counts), a download link, and a
+   delete action (removes the job record plus its input/output files;
    blocked while a job is still queued or in progress).
 
 ## Stack
 
-- **MongoDB** (Mongoose) — publishers, global capacity config, per-buyer
-  daily allotments, per-publisher-per-buyer usage counters, scrub job
+- **MongoDB** (Mongoose) — publishers (with their own daily limit), global
+  capacity config, per-publisher-per-buyer usage counters, scrub job
   records.
 - **Express** — REST API (`server/`).
 - **React** (Vite + Tailwind + React Router + TanStack Query) — frontend
@@ -90,10 +86,11 @@ history.
 server/
   src/
     config/       env vars, MongoDB connection
-    models/       Publisher, GlobalConfig, BuyerConfig, BuyerUsage, ScrubJob
-    constants/    buyer registry (LM/HC keys, labels, buyer1/buyer2 mapping)
+    models/       Publisher (with dailyLimit), GlobalConfig, BuyerUsage,
+                  ScrubJob
+    constants/    buyer registry (LM/HC keys, buyer1/buyer2 mapping)
     services/     phone normalization, buyer API client, per-publisher
-                  buyer-limit reservation and capacity validation,
+                  50/50 buyer-limit reservation and capacity validation,
                   streaming CSV scrub (two-pass), the job queue/worker
     controllers/  request handlers
     routes/       Express routers
@@ -137,37 +134,38 @@ Output columns and the publisher-facing summary only ever refer to
 `Buyer 1`/`Buyer 2` (buyer1 = LM, buyer2 = HC, fixed) — publishers never
 see which real buyer checked a given phone.
 
-## Limits: buyer allotments and global capacity
+## Limits: a daily limit per publisher, split 50/50
 
 There's no shared "pool" of leads consumed as jobs run. Instead:
 
-- **Each buyer's daily limit is a per-publisher allotment**, not a total
-  pool split across publishers. If LM's daily limit is 100,000, *every*
-  publisher independently gets up to 100,000 LM checks per day — Publisher
-  A using its full 100,000 doesn't take anything away from Publisher B's
-  own 100,000. Seeded at 100,000 for each buyer in the DB and changed only
-  from the admin dashboard (no env var). Once a publisher has used up its
-  allotment from a buyer for the day, any phone still routed to that buyer
-  is left `Not Checked` for the rest of that publisher's jobs that day —
-  there's no fallback to the other buyer.
-- **A publisher's own daily lead capacity is derived**, not manually set:
-  it's always `(LM's daily limit) + (HC's daily limit)`, the same for
-  every publisher (e.g. 100,000 + 100,000 = 200,000/day). There's no
-  separate per-publisher limit to configure.
+- **Each publisher has its own admin-set daily limit** (e.g. 100,000, or
+  500,000 - whatever an admin sets when adding or editing that publisher).
+  It's independent of every other publisher's limit - Publisher A using
+  its full 500,000 doesn't take anything away from Publisher B's own
+  100,000.
+- **That limit is split 50/50 between the two buyers when scrubbing.** A
+  100,000-limit publisher gets 50,000 checks against LM and 50,000 against
+  HC per day; a 500,000-limit publisher gets 250,000 against each. (On an
+  odd limit, LM gets the extra one, e.g. 99,999 → 50,000 LM / 49,999 HC.)
+  Once a publisher has used up its half from a buyer for the day, any
+  phone still routed to that buyer is left `Not Checked` rather than
+  redirected to the other buyer.
 - **The global daily limit is a capacity-planning ceiling, not a live
-  usage counter.** It bounds how many *active* publishers the current
-  buyer limits can support: `(active publisher count) × (LM limit + HC
-  limit)` must never exceed it. E.g. with an 800,000 global limit and both
-  buyers set to 100,000 (200,000/publisher), at most 4 publishers can be
-  active at once (4 × 200,000 = 800,000); lowering both buyer limits to
-  50,000 each (100,000/publisher) would let up to 8 publishers be active
-  under the same 800,000 ceiling. Lowering a buyer's limit, raising the
-  global limit, or activating a new publisher are all validated against
-  this formula and rejected with a clear error if they'd overcommit it.
-- The admin dashboard shows, per buyer, how many total calls have been
-  used **across all publishers combined today** (informational only — not
-  a cap), and shows the global card's "committed capacity" as `active
-  publishers × per-publisher capacity` against the global ceiling.
+  usage counter.** The sum of every *active* publisher's own daily limit
+  must never exceed it. E.g. with a 1,000,000 global limit, publishers
+  with limits of 500,000 and 100,000 are fine (600,000 committed,
+  400,000 of headroom left for more publishers or higher limits).
+  Creating a publisher, raising a publisher's limit, or lowering the
+  global limit are all validated against this and rejected with a clear
+  error if they'd overcommit it - but *lowering* a publisher's limit or
+  *raising* the global limit are always allowed, since neither can ever
+  make an over-committed state worse (this matters if the system is ever
+  already over the ceiling for some other reason - it guarantees there's
+  always a way out via either lever).
+- The admin dashboard's publisher table shows each publisher's total usage
+  today plus a per-buyer breakdown (their limit's 50/50 halves and how
+  much of each has been used) for visibility - only the top-level daily
+  limit is actually editable per publisher.
 
 ## Getting started
 
@@ -188,12 +186,9 @@ Visit http://localhost:5173 (the Vite dev server, which proxies `/api` to
 `/admin/login` (not linked from the public nav — it's for internal use only)
 using `ADMIN_USERNAME` / `ADMIN_PASSWORD` from `server/.env`.
 
-On first boot there are no publishers — sign in to `/admin`, review each
-buyer's daily allotment (LM/HC, defaults to 100,000 each — every publisher
-gets this amount from each buyer), review the global capacity ceiling
-(defaults to 1,000,000, comfortably supporting several publishers at the
-default allotments), and add publishers before anyone can upload a file
-for them.
+On first boot there are no publishers — sign in to `/admin`, review the
+global capacity ceiling (defaults to 1,000,000), and add publishers with
+their own daily limit before anyone can upload a file for them.
 
 ### Production: single port
 
@@ -216,14 +211,14 @@ no separate origin to configure.
 See `server/.env.example` for the full list, notably:
 
 - `LM_BUYER_API_URL` / `HC_BUYER_API_URL` — each buyer's API endpoint.
-- Each buyer's per-publisher daily allotment is **not** an env var — it's a
-  DB document seeded at 100,000 on first boot, changeable only from the
-  admin dashboard's "Buyer API daily limits" card from then on.
+- Publisher daily limits are **not** env vars - each is set per publisher
+  from the admin dashboard's Publishers tab (split 50/50 between buyers
+  automatically at scrub time).
 - `BUYER_API_CONCURRENCY` / `BUYER_API_BATCH_DELAY_MS` — shared rate limit
   knobs (defaults to 20/1200ms ≈ 1000/min per buyer).
 - `DEFAULT_TOTAL_DAILY_LIMIT` — seed value for the global capacity ceiling
-  (1,000,000). Must exceed at least one publisher's derived capacity (sum
-  of both buyer allotments) or no publisher can be activated.
+  (1,000,000), applied on first boot only and editable from the admin
+  dashboard afterward.
 - `LIMIT_RESET_TIMEZONE` — defaults to `America/New_York`.
 - `ADMIN_USERNAME` / `ADMIN_PASSWORD` / `ADMIN_JWT_SECRET` — single-admin
   login. There's no multi-user admin system in this version.
@@ -249,8 +244,10 @@ See `server/.env.example` for the full list, notably:
 - If the server crashes mid-job, on restart it re-analyzes the file and
   reprocesses every unique phone from scratch, but any buyer calls already
   made before the crash are re-sent and re-counted against that
-  publisher's daily allotment for each buyer - an accepted tradeoff for not
+  publisher's daily limit for each buyer - an accepted tradeoff for not
   needing to persist partial per-phone results.
-- There's currently no per-publisher override of a buyer's allotment - the
-  same LM/HC daily limit applies uniformly to every publisher. Per-publisher
-  overrides would be a natural extension if that's ever needed.
+- Schema changes that alter a unique index (e.g. adding `publisherId` to
+  `BuyerUsage`'s uniqueness constraint) don't retroactively drop the old
+  index in an already-running database - Mongoose's default `autoIndex`
+  only ever creates missing indexes. `config/db.js` calls `syncIndexes()`
+  on every model at startup specifically to handle this.
