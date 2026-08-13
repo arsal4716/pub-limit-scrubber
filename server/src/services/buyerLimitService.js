@@ -98,10 +98,17 @@ function assertCapacity({ activePublisherCount, perPublisherCapacity, totalDaily
 
 // Called before changing a buyer's dailyLimit - ensures the CURRENT active
 // publisher count still fits under the global cap with the proposed limit.
+// LOWERING a buyer's limit can only ever reduce total committed capacity,
+// so it's always allowed, even if the system is still over capacity
+// afterward from some other pre-existing cause - blocking it uniformly
+// would leave admins with no way to correct an already over-committed
+// state (e.g. one inherited from a config/data migration).
 async function validateBuyerLimitChange(buyerKey, proposedDailyLimit) {
-  const [lm, hc, globalConfig, activePublisherCount] = await Promise.all([
-    getOrCreateBuyerConfig("LM"),
-    getOrCreateBuyerConfig("HC"),
+  const [lm, hc] = await Promise.all([getOrCreateBuyerConfig("LM"), getOrCreateBuyerConfig("HC")]);
+  const currentLimit = buyerKey === "LM" ? lm.dailyLimit : hc.dailyLimit;
+  if (proposedDailyLimit <= currentLimit) return;
+
+  const [globalConfig, activePublisherCount] = await Promise.all([
     getOrCreateGlobalConfig(),
     Publisher.countDocuments({ active: true }),
   ]);
@@ -114,9 +121,14 @@ async function validateBuyerLimitChange(buyerKey, proposedDailyLimit) {
   });
 }
 
-// Called before changing the global daily limit - ensures it still covers
-// the current active publisher count at current buyer limits.
+// Called before changing the global daily limit. RAISING it can only ever
+// add headroom, so it's always allowed (this is the main lever admins use
+// to resolve an already over-committed state) - only a decrease is
+// checked against current commitments.
 async function validateGlobalLimitChange(proposedTotalDailyLimit) {
+  const globalConfig = await getOrCreateGlobalConfig();
+  if (proposedTotalDailyLimit >= globalConfig.totalDailyLimit) return;
+
   const [{ total }, activePublisherCount] = await Promise.all([
     getPerPublisherCapacity(),
     Publisher.countDocuments({ active: true }),
