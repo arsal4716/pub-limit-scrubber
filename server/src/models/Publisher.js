@@ -15,6 +15,14 @@ const publisherSchema = new mongoose.Schema(
       unique: true,
       index: true,
     },
+    // Total daily leads this publisher may scrub, split 50/50 between the
+    // two buyers when processing (see buyerLimitService.getPublisherBuyerLimits).
+    dailyLimit: {
+      type: Number,
+      required: true,
+      min: 0,
+      default: 0,
+    },
     active: {
       type: Boolean,
       default: true,

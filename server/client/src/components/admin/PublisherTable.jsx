@@ -13,17 +13,20 @@ export default function PublisherTable() {
   const publishers = data?.publishers || [];
 
   const [newName, setNewName] = useState("");
+  const [newLimit, setNewLimit] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editValue, setEditValue] = useState("");
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["admin-publishers"] });
     queryClient.invalidateQueries({ queryKey: ["global-config"] });
-    queryClient.invalidateQueries({ queryKey: ["buyer-config"] });
   };
 
   const createMutation = useMutation({
-    mutationFn: () => createAdminPublisher(newName.trim()),
+    mutationFn: () => createAdminPublisher(newName.trim(), Number(newLimit)),
     onSuccess: () => {
       setNewName("");
+      setNewLimit("");
       invalidate();
     },
   });
@@ -31,14 +34,27 @@ export default function PublisherTable() {
   const updateMutation = useMutation({
     mutationFn: ({ id, updates }) => updateAdminPublisher(id, updates),
     onSuccess: () => {
+      setEditingId(null);
       invalidate();
     },
   });
 
   function handleCreate(e) {
     e.preventDefault();
-    if (!newName.trim()) return;
+    if (!newName.trim() || newLimit === "") return;
     createMutation.mutate();
+  }
+
+  function startEdit(pub) {
+    setEditingId(pub.id);
+    setEditValue(String(pub.dailyLimit));
+  }
+
+  function saveEdit(id) {
+    const parsed = Number(editValue);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      updateMutation.mutate({ id, updates: { dailyLimit: parsed } });
+    }
   }
 
   function toggleActive(pub) {
@@ -59,11 +75,17 @@ export default function PublisherTable() {
               placeholder="Acme Leads"
             />
           </div>
-          <p className="text-xs text-slate-400 max-w-xs">
-            Every publisher automatically gets the same daily capacity - the sum of both buyers'
-            per-publisher limits (set in the Buyer API daily limits card above). There's no
-            per-publisher limit to configure here anymore.
-          </p>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Daily limit</label>
+            <input
+              type="number"
+              min="0"
+              value={newLimit}
+              onChange={(e) => setNewLimit(e.target.value)}
+              className="w-32 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              placeholder="100000"
+            />
+          </div>
           <button
             type="submit"
             disabled={createMutation.isPending}
@@ -72,6 +94,10 @@ export default function PublisherTable() {
             Add publisher
           </button>
         </form>
+        <p className="mt-2 text-xs text-slate-400">
+          A publisher's daily limit is split 50/50 between the two buyers when scrubbing (e.g. a
+          100,000 limit sends 50,000 leads to each buyer).
+        </p>
         {createMutation.isError && (
           <p className="mt-2 text-sm text-red-600">
             {createMutation.error?.response?.data?.error || "Failed to create publisher."}
@@ -83,7 +109,8 @@ export default function PublisherTable() {
         <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
           <tr>
             <th className="text-left px-5 py-2 font-medium">Publisher</th>
-            <th className="text-left px-5 py-2 font-medium">Today's usage (total)</th>
+            <th className="text-left px-5 py-2 font-medium">Today's usage</th>
+            <th className="text-left px-5 py-2 font-medium">Daily limit</th>
             <th className="text-left px-5 py-2 font-medium">LM</th>
             <th className="text-left px-5 py-2 font-medium">HC</th>
             <th className="text-left px-5 py-2 font-medium">Status</th>
@@ -99,6 +126,34 @@ export default function PublisherTable() {
                   {pub.usedToday.toLocaleString()} / {pub.dailyLimit.toLocaleString()}
                 </p>
                 <ProgressBar value={pub.usedToday} max={pub.dailyLimit || 1} colorClass="bg-emerald-600" />
+              </td>
+              <td className="px-5 py-3">
+                {editingId === pub.id ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      className="w-28 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                      autoFocus
+                    />
+                    <button
+                      onClick={() => saveEdit(pub.id)}
+                      className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => setEditingId(null)}
+                      className="text-xs text-slate-400 hover:text-slate-600"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  pub.dailyLimit.toLocaleString()
+                )}
               </td>
               {["LM", "HC"].map((key) => {
                 const buyer = pub.buyers.find((b) => b.key === key);
@@ -118,6 +173,14 @@ export default function PublisherTable() {
                 </span>
               </td>
               <td className="px-5 py-3 text-right space-x-3">
+                {editingId !== pub.id && (
+                  <button
+                    onClick={() => startEdit(pub)}
+                    className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                  >
+                    Edit limit
+                  </button>
+                )}
                 <button
                   onClick={() => toggleActive(pub)}
                   className="text-xs font-medium text-slate-500 hover:text-slate-700"
@@ -129,7 +192,7 @@ export default function PublisherTable() {
           ))}
           {publishers.length === 0 && (
             <tr>
-              <td colSpan={6} className="px-5 py-6 text-center text-slate-400 text-sm">
+              <td colSpan={7} className="px-5 py-6 text-center text-slate-400 text-sm">
                 No publishers yet. Add one above.
               </td>
             </tr>

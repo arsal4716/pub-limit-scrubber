@@ -1,7 +1,9 @@
 const path = require("path");
 const ScrubJob = require("../models/ScrubJob");
+const Publisher = require("../models/Publisher");
 const { analyzeFile, writeOutputFile } = require("./csvService");
 const { processPhonesSplit, leadsPerMinuteRate } = require("./buyerApiClient");
+const { getPublisherBuyerLimits } = require("./buyerLimitService");
 const { detectDelimiter } = require("../utils/csvDelimiter");
 
 function applyBuyerStat(stat, status) {
@@ -68,6 +70,9 @@ async function runJob(jobId) {
   if (!job) return;
   if (job.status === "completed") return;
 
+  const publisher = await Publisher.findById(job.publisherId);
+  const buyerLimits = getPublisherBuyerLimits(publisher ? publisher.dailyLimit : 0);
+
   job.status = "analyzing";
   job.startedAt = job.startedAt || new Date();
   await job.save();
@@ -105,6 +110,7 @@ async function runJob(jobId) {
       phonesToProcess,
       analysis.phoneStates,
       job.publisherId,
+      buyerLimits,
       (phone, result) => {
         phoneResults.set(phone, result);
         applyResultToJob(job, result);

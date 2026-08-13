@@ -1,6 +1,5 @@
 import { useState } from "react";
 import GlobalLimitCard from "../../components/admin/GlobalLimitCard.jsx";
-import BuyerLimitsCard from "../../components/admin/BuyerLimitsCard.jsx";
 import PublisherTable from "../../components/admin/PublisherTable.jsx";
 import JobsTable from "../../components/admin/JobsTable.jsx";
 
@@ -33,12 +32,7 @@ export default function AdminDashboardPage() {
         ))}
       </div>
 
-      {tab === "overview" && (
-        <div className="space-y-6">
-          <GlobalLimitCard />
-          <BuyerLimitsCard />
-        </div>
-      )}
+      {tab === "overview" && <GlobalLimitCard />}
       {tab === "publishers" && <PublisherTable />}
       {tab === "jobs" && <JobsTable />}
     </div>

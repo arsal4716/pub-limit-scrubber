@@ -21,8 +21,6 @@ export default function GlobalLimitCard() {
 
   if (!config) return null;
 
-  const committedCapacity = config.activePublisherCount * config.perPublisherCapacity;
-
   function startEditing() {
     setValue(String(config.totalDailyLimit));
     setEditing(true);
@@ -42,18 +40,13 @@ export default function GlobalLimitCard() {
         <div>
           <h2 className="text-sm font-medium text-slate-500">Global daily lead capacity</h2>
           <p className="text-2xl font-semibold text-slate-800 mt-1">
-            {committedCapacity.toLocaleString()} / {config.totalDailyLimit.toLocaleString()}
+            {config.usedToday.toLocaleString()} / {config.totalDailyLimit.toLocaleString()}
           </p>
           <p className="text-xs text-slate-400 mt-0.5">
-            {config.activePublisherCount.toLocaleString()} active publisher
-            {config.activePublisherCount === 1 ? "" : "s"} &times;{" "}
-            {config.perPublisherCapacity.toLocaleString()} leads/day each. This is a
-            capacity-planning ceiling, not a live usage pool - it determines how many
-            publishers the current buyer limits can support (up to{" "}
-            {Number.isFinite(config.maxSupportablePublishers)
-              ? config.maxSupportablePublishers.toLocaleString()
-              : "unlimited"}
-            ).
+            Sum of {config.activePublisherCount.toLocaleString()} active publisher
+            {config.activePublisherCount === 1 ? "'s" : "s'"} daily limits &middot;{" "}
+            {config.remainingToday.toLocaleString()} of capacity still available for new or
+            larger publisher limits.
           </p>
         </div>
         {!editing && (
@@ -67,7 +60,7 @@ export default function GlobalLimitCard() {
       </div>
 
       <div className="mt-4">
-        <ProgressBar value={committedCapacity} max={config.totalDailyLimit || 1} />
+        <ProgressBar value={config.usedToday} max={config.totalDailyLimit || 1} />
       </div>
 
       {editing && (

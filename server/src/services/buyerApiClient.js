@@ -65,14 +65,14 @@ const BUYER_PINGERS = { LM: pingLM, HC: pingHC };
 // re-checks the other's phones, this doubles total throughput (e.g. two
 // buyers each sustaining ~1000/min yields ~2000 unique phones/min overall)
 // instead of just doubling API calls per phone.
-async function checkPhoneWithBuyer(buyerKey, phone, state, publisherId) {
+async function checkPhoneWithBuyer(buyerKey, phone, state, publisherId, dailyLimit) {
   if (buyerKey === "HC" && !state) {
     return { status: "Error", message: "Missing state value", raw: null };
   }
 
-  // Each publisher has their own daily allotment from this buyer - not a
-  // pool shared with other publishers.
-  const allowed = await reserveBuyerCall(buyerKey, publisherId);
+  // The publisher's own dailyLimit is split 50/50 between the two buyers -
+  // not a pool shared with other publishers.
+  const allowed = await reserveBuyerCall(buyerKey, publisherId, dailyLimit);
   if (!allowed) {
     // No fallback to the other buyer by design - a phone routed to a
     // buyer this publisher is out of quota with is left unprocessed
@@ -84,7 +84,7 @@ async function checkPhoneWithBuyer(buyerKey, phone, state, publisherId) {
 
 // Runs one buyer's half of the split at env.buyerApiConcurrency phones
 // every env.buyerApiBatchDelayMs, independent of the other buyer's loop.
-async function processPhonesForBuyer(buyerKey, phones, phoneStates, publisherId, onResult, onProgress) {
+async function processPhonesForBuyer(buyerKey, phones, phoneStates, publisherId, dailyLimit, onResult, onProgress) {
   const slot = BUYER_SLOT[buyerKey];
   let processed = 0;
 
@@ -94,7 +94,7 @@ async function processPhonesForBuyer(buyerKey, phones, phoneStates, publisherId,
     await Promise.all(
       batch.map(async (phone) => {
         const state = phoneStates.get(phone);
-        const result = await checkPhoneWithBuyer(buyerKey, phone, state, publisherId);
+        const result = await checkPhoneWithBuyer(buyerKey, phone, state, publisherId, dailyLimit);
         onResult(phone, { slot, buyerKey, ...result });
       })
     );
@@ -112,13 +112,14 @@ async function processPhonesForBuyer(buyerKey, phones, phoneStates, publisherId,
 // Splits `phones` into two halves (buyer1 = LM gets the first, larger half
 // on an odd count; buyer2 = HC gets the second) and processes both halves
 // concurrently against `publisherId`'s own allotment from each buyer.
-// `phoneStates` maps a normalized phone to its state code (for HC).
-// `onResult(phone, result)` fires per phone with `{ slot, buyerKey,
-// status, message, raw }` - exactly one buyer's result, since each phone
-// is only ever routed to one. `onBatchDone(processedSoFar, total)` fires
-// after either loop makes progress, so callers can persist combined
-// progress for polling clients.
-async function processPhonesSplit(phones, phoneStates, publisherId, onResult, onBatchDone) {
+// `buyerLimits` is `{ LM, HC }`, that publisher's own dailyLimit split
+// 50/50 (see buyerLimitService.getPublisherBuyerLimits). `phoneStates`
+// maps a normalized phone to its state code (for HC). `onResult(phone,
+// result)` fires per phone with `{ slot, buyerKey, status, message, raw }`
+// - exactly one buyer's result, since each phone is only ever routed to
+// one. `onBatchDone(processedSoFar, total)` fires after either loop makes
+// progress, so callers can persist combined progress for polling clients.
+async function processPhonesSplit(phones, phoneStates, publisherId, buyerLimits, onResult, onBatchDone) {
   const total = phones.length;
   const mid = Math.ceil(total / 2);
   const buyer1Phones = phones.slice(0, mid);
@@ -131,11 +132,11 @@ async function processPhonesSplit(phones, phoneStates, publisherId, onResult, on
   };
 
   await Promise.all([
-    processPhonesForBuyer("LM", buyer1Phones, phoneStates, publisherId, onResult, async (n) => {
+    processPhonesForBuyer("LM", buyer1Phones, phoneStates, publisherId, buyerLimits.LM, onResult, async (n) => {
       buyer1Done = n;
       await reportProgress();
     }),
-    processPhonesForBuyer("HC", buyer2Phones, phoneStates, publisherId, onResult, async (n) => {
+    processPhonesForBuyer("HC", buyer2Phones, phoneStates, publisherId, buyerLimits.HC, onResult, async (n) => {
       buyer2Done = n;
       await reportProgress();
     }),
