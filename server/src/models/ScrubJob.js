@@ -29,9 +29,8 @@ const scrubJobSchema = new mongoose.Schema(
     duplicateInFileCount: { type: Number, default: 0 },
     uniquePhoneCount: { type: Number, default: 0 },
 
-    allowedCount: { type: Number, default: 0 }, // quota actually reserved/sent to buyer API
-    quotaReserved: { type: Boolean, default: false }, // guards against double-reserving on crash recovery
-    skippedOverLimitCount: { type: Number, default: 0 },
+    allowedCount: { type: Number, default: 0 }, // = uniquePhoneCount; every unique phone is attempted
+    skippedOverLimitCount: { type: Number, default: 0 }, // tally of phones whose assigned buyer was out of quota (Not Checked)
 
     processedCount: { type: Number, default: 0 }, // progress counter
     acceptedCount: { type: Number, default: 0 }, // that phone's assigned buyer returned Available

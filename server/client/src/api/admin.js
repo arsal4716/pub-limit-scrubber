@@ -25,8 +25,8 @@ export async function fetchAdminPublishers() {
   return data;
 }
 
-export async function createAdminPublisher(name, dailyLimit) {
-  const { data } = await client.post("/admin/publishers", { name, dailyLimit });
+export async function createAdminPublisher(name) {
+  const { data } = await client.post("/admin/publishers", { name });
   return data;
 }
 

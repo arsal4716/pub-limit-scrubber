@@ -21,6 +21,8 @@ export default function GlobalLimitCard() {
 
   if (!config) return null;
 
+  const committedCapacity = config.activePublisherCount * config.perPublisherCapacity;
+
   function startEditing() {
     setValue(String(config.totalDailyLimit));
     setEditing(true);
@@ -38,13 +40,20 @@ export default function GlobalLimitCard() {
     <div className="rounded-xl border border-slate-200 bg-white p-5">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-sm font-medium text-slate-500">Global daily lead limit</h2>
+          <h2 className="text-sm font-medium text-slate-500">Global daily lead capacity</h2>
           <p className="text-2xl font-semibold text-slate-800 mt-1">
-            {config.usedToday.toLocaleString()} / {config.totalDailyLimit.toLocaleString()}
+            {committedCapacity.toLocaleString()} / {config.totalDailyLimit.toLocaleString()}
           </p>
           <p className="text-xs text-slate-400 mt-0.5">
-            Resets at midnight US Eastern &middot; {config.remainingToday.toLocaleString()} remaining
-            today ({config.dateKey})
+            {config.activePublisherCount.toLocaleString()} active publisher
+            {config.activePublisherCount === 1 ? "" : "s"} &times;{" "}
+            {config.perPublisherCapacity.toLocaleString()} leads/day each. This is a
+            capacity-planning ceiling, not a live usage pool - it determines how many
+            publishers the current buyer limits can support (up to{" "}
+            {Number.isFinite(config.maxSupportablePublishers)
+              ? config.maxSupportablePublishers.toLocaleString()
+              : "unlimited"}
+            ).
           </p>
         </div>
         {!editing && (
@@ -58,7 +67,7 @@ export default function GlobalLimitCard() {
       </div>
 
       <div className="mt-4">
-        <ProgressBar value={config.usedToday} max={config.totalDailyLimit} />
+        <ProgressBar value={committedCapacity} max={config.totalDailyLimit || 1} />
       </div>
 
       {editing && (

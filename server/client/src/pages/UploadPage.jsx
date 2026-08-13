@@ -112,9 +112,10 @@ export default function UploadPage() {
               Your daily limit is {validation.dailyLimit.toLocaleString()} leads
               {validation.usedToday > 0 &&
                 ` (${validation.usedToday.toLocaleString()} already used today)`}
-              . Only your first {validation.remainingToday.toLocaleString()} unique, valid leads will
-              be sent to the buyer API — any additional leads in your file will be{" "}
-              <strong>skipped</strong> and marked "Skipped - Daily Limit Reached" in the output.
+              . Every unique, valid lead in your file is attempted, split roughly 50/50 between our
+              two buyers for faster processing — leads beyond your remaining daily limit are marked{" "}
+              <strong>Not Checked</strong> in the output rather than being scrubbed twice as fast at
+              your expense.
             </p>
           </div>
 

@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchBuyerConfig, updateBuyerConfig } from "../../api/admin";
-import ProgressBar from "../ProgressBar.jsx";
 
 export default function BuyerLimitsCard() {
   const queryClient = useQueryClient();
@@ -11,6 +10,8 @@ export default function BuyerLimitsCard() {
     mutationFn: ({ key, dailyLimit }) => updateBuyerConfig(key, dailyLimit),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["buyer-config"] });
+      queryClient.invalidateQueries({ queryKey: ["global-config"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-publishers"] });
     },
   });
 
@@ -21,8 +22,13 @@ export default function BuyerLimitsCard() {
       <div>
         <h2 className="text-sm font-medium text-slate-500">Buyer API daily limits</h2>
         <p className="text-xs text-slate-400 mt-0.5">
-          Independent of the global lead limit above - caps how many calls each buyer API
-          receives per day ({data.dateKey}).
+          Each value is the daily allotment EVERY publisher individually gets from that buyer -
+          not a pool shared across publishers ({data.dateKey}). Currently supports up to{" "}
+          {Number.isFinite(data.maxSupportablePublishers)
+            ? data.maxSupportablePublishers.toLocaleString()
+            : "unlimited"}{" "}
+          active publisher{data.maxSupportablePublishers === 1 ? "" : "s"} under the global daily
+          capacity ({data.activePublisherCount.toLocaleString()} active now).
         </p>
       </div>
 
@@ -49,7 +55,7 @@ function BuyerRow({ buyer, onSave, isSaving }) {
   const [value, setValue] = useState("");
 
   function startEditing() {
-    setValue(String(buyer.dailyLimit));
+    setValue(String(buyer.dailyLimitPerPublisher));
     setEditing(true);
   }
 
@@ -68,9 +74,12 @@ function BuyerRow({ buyer, onSave, isSaving }) {
         <div>
           <p className="text-sm font-medium text-slate-700">{buyer.label}</p>
           <p className="text-lg font-semibold text-slate-800 mt-0.5">
-            {buyer.usedToday.toLocaleString()} / {buyer.dailyLimit.toLocaleString()}
+            {buyer.dailyLimitPerPublisher.toLocaleString()} / publisher / day
           </p>
-          <p className="text-xs text-slate-400">{buyer.remainingToday.toLocaleString()} remaining today</p>
+          <p className="text-xs text-slate-400">
+            {buyer.usedTodayAcrossAllPublishers.toLocaleString()} used today across all publishers
+            combined
+          </p>
         </div>
         {!editing && (
           <button
@@ -80,10 +89,6 @@ function BuyerRow({ buyer, onSave, isSaving }) {
             Edit limit
           </button>
         )}
-      </div>
-
-      <div className="mt-3">
-        <ProgressBar value={buyer.usedToday} max={buyer.dailyLimit} />
       </div>
 
       {editing && (
