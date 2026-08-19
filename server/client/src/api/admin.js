@@ -10,6 +10,11 @@ export async function updateGlobalConfig(totalDailyLimit) {
   return data;
 }
 
+export async function updateRateLimitMode(enabled) {
+  const { data } = await client.put("/admin/rate-limit", { enabled });
+  return data;
+}
+
 export async function fetchAdminPublishers() {
   const { data } = await client.get("/admin/publishers");
   return data;

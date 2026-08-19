@@ -44,16 +44,21 @@ module.exports = {
   hcBuyerApiTimeoutMs: toInt(process.env.HC_BUYER_API_TIMEOUT_MS, 5000),
   hcVendorApiKey: process.env.HC_VENDOR_API_KEY || "",
 
-  // Per-buyer rate limiting: CONCURRENCY phones every BATCH_DELAY_MS. LM
-  // and HC each run their own independent, concurrently-running loop over
-  // their half of the unique phone list, so default 20/1200ms sustains
-  // ~1000/min per buyer = ~2000 unique phones/min combined.
+  // Per-buyer rate limiting, used when the admin "rate limit mode" toggle
+  // is ON: CONCURRENCY phones every BATCH_DELAY_MS. LM and HC each run
+  // their own independent, concurrently-running loop over their half of
+  // the unique phone list, so default 20/1200ms sustains ~1000/min per
+  // buyer = ~2000 unique phones/min combined.
   buyerApiConcurrency: toInt(process.env.BUYER_API_CONCURRENCY, 20),
   buyerApiBatchDelayMs: toInt(process.env.BUYER_API_BATCH_DELAY_MS, 1200),
 
-  // Must comfortably exceed a single publisher's derived capacity (LM's
-  // 100,000 default + HC's 100,000 default = 200,000) or the very first
-  // publisher can never be activated on a fresh install.
+  // Used when rate limit mode is OFF: a much larger batch size and no
+  // delay between batches - phones are scrubbed as fast as the buyer APIs
+  // and network allow rather than at a fixed pace.
+  fastModeConcurrency: toInt(process.env.FAST_MODE_CONCURRENCY, 200),
+
+  // Seed value for the global capacity ceiling (applied on first boot
+  // only, then only editable from the admin dashboard).
   defaultTotalDailyLimit: toInt(process.env.DEFAULT_TOTAL_DAILY_LIMIT, 1000000),
   limitResetTimezone: process.env.LIMIT_RESET_TIMEZONE || "America/New_York",
 };

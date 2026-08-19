@@ -26,7 +26,8 @@ function jobToStatusDto(job) {
     apiErrorCount: job.apiErrorCount,
     buyerStats: job.buyerStats, // anonymized buyer1/buyer2 breakdown only
     estimatedSeconds: job.estimatedSeconds,
-    leadsPerMinuteRate: leadsPerMinuteRate(),
+    rateLimitEnabled: job.rateLimitEnabled,
+    leadsPerMinuteRate: leadsPerMinuteRate(job.rateLimitEnabled),
     createdAt: job.createdAt,
     startedAt: job.startedAt,
     completedAt: job.completedAt,

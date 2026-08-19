@@ -20,4 +20,12 @@ async function updateGlobalDailyLimit(totalDailyLimit) {
   );
 }
 
-module.exports = { getOrCreateGlobalConfig, updateGlobalDailyLimit };
+async function updateRateLimitMode(enabled) {
+  return GlobalConfig.findOneAndUpdate(
+    { key: "global" },
+    { rateLimitEnabled: enabled },
+    { upsert: true, new: true }
+  );
+}
+
+module.exports = { getOrCreateGlobalConfig, updateGlobalDailyLimit, updateRateLimitMode };

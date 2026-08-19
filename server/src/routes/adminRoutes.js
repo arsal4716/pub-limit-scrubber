@@ -2,6 +2,7 @@ const express = require("express");
 const {
   getConfig,
   updateConfig,
+  updateRateLimit,
   listPublishers,
   createPublisher,
   updatePublisher,
@@ -16,6 +17,7 @@ router.use(requireAdmin);
 
 router.get("/config", asyncHandler(getConfig));
 router.put("/config", asyncHandler(updateConfig));
+router.put("/rate-limit", asyncHandler(updateRateLimit));
 
 router.get("/publishers", asyncHandler(listPublishers));
 router.post("/publishers", asyncHandler(createPublisher));

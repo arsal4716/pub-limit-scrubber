@@ -33,9 +33,9 @@ export default function JobStatusCard({ jobId }) {
 
   const isPreProcessing = job.status === "queued" || job.status === "analyzing";
   const remainingToProcess = Math.max(0, (job.allowedCount || 0) - (job.processedCount || 0));
-  const remainingSeconds = job.leadsPerMinuteRate
-    ? (remainingToProcess / job.leadsPerMinuteRate) * 60
-    : 0;
+  const hasEta = Boolean(job.leadsPerMinuteRate);
+  const remainingSeconds = hasEta ? (remainingToProcess / job.leadsPerMinuteRate) * 60 : 0;
+  const etaText = hasEta ? formatMinutes(remainingSeconds) : "as fast as possible";
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-4 shadow-sm">
@@ -63,7 +63,7 @@ export default function JobStatusCard({ jobId }) {
             <span>
               {job.processedCount} / {job.allowedCount} leads scrubbed
             </span>
-            <span>{job.status === "completed" ? "100%" : `~${formatMinutes(remainingSeconds)} left`}</span>
+            <span>{job.status === "completed" ? "100%" : hasEta ? `~${etaText} left` : etaText}</span>
           </div>
           <ProgressBar value={job.processedCount} max={job.allowedCount || 1} />
         </div>
@@ -71,8 +71,8 @@ export default function JobStatusCard({ jobId }) {
 
       {job.status === "processing" && (
         <p className="text-sm text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg p-3">
-          You can leave this tab — come back in {formatMinutes(remainingSeconds)} and your file will
-          be ready to download here (or from the link you can bookmark now:{" "}
+          You can leave this tab — {hasEta ? `come back in ${etaText}` : "check back shortly"} and
+          your file will be ready to download here (or from the link you can bookmark now:{" "}
           <code className="text-xs">/status/{String(job.id)}</code>).
         </p>
       )}
