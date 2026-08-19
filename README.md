@@ -61,10 +61,12 @@ dashboard for managing limits and reviewing scrub history.
 8. Admins log in to `/admin` to add publishers with their own daily limit,
    edit any publisher's limit later, enable/disable publishers, set the
    global daily capacity ceiling (validated so the sum of active
-   publishers' limits can never exceed it), and browse every scrub job with
-   full stats (including per-buyer blocked counts), a download link, and a
-   delete action (removes the job record plus its input/output files;
-   blocked while a job is still queued or in progress).
+   publishers' limits can never exceed it), toggle scrub speed between
+   rate-limited and as-fast-as-possible (see "Scrub speed" below), and
+   browse every scrub job with full stats (including per-buyer blocked
+   counts), a download link, and a delete action (removes the job record
+   plus its input/output files; blocked while a job is still queued or in
+   progress).
 
 ## Stack
 
@@ -135,6 +137,34 @@ failing the whole job.
 Output columns and the publisher-facing summary only ever refer to
 `Buyer 1`/`Buyer 2` (buyer1 = LM, buyer2 = HC, fixed) — publishers never
 see which real buyer checked a given phone.
+
+## Scrub speed: rate limited vs. as fast as possible
+
+A single global toggle in the admin dashboard (Overview tab) controls how
+aggressively both buyers' pacing loops run:
+
+- **Rate limited (default, ON)** — each buyer processes
+  `BUYER_API_CONCURRENCY` phones (default 20) every
+  `BUYER_API_BATCH_DELAY_MS` (default 1200ms), sustaining ~1000
+  requests/min per buyer, ~2000/min combined. This is the original,
+  conservative pace.
+- **As fast as possible (OFF)** — each buyer instead batches
+  `FAST_MODE_CONCURRENCY` phones (default 200) at a time with **no delay**
+  between batches, so phones are scrubbed as quickly as the buyer APIs and
+  network allow rather than at a fixed rate. There's no meaningful "leads
+  per minute" number to report in this mode — the publisher-facing job
+  status shows "as fast as possible" instead of a numeric ETA.
+
+Regardless of which mode is active, if either buyer responds with `429 Too
+Many Requests`, that buyer's loop pauses for a randomized 3-4 seconds
+before its next batch (independent of the other buyer) rather than
+continuing to hammer an API that just asked to slow down. The phone(s)
+that received the 429 are recorded as `Error` for that buyer; there's no
+automatic retry of that specific phone.
+
+The toggle applies to jobs that start after it's changed — a job already
+running keeps whichever mode it started with (each `ScrubJob` records a
+snapshot of `rateLimitEnabled` at the time it began processing).
 
 ## Limits: a daily limit per publisher, split 50/50
 
@@ -220,8 +250,12 @@ See `server/.env.example` for the full list, notably:
 - Publisher daily limits are **not** env vars - each is set per publisher
   from the admin dashboard's Publishers tab (split 50/50 between buyers
   automatically at scrub time).
-- `BUYER_API_CONCURRENCY` / `BUYER_API_BATCH_DELAY_MS` — shared rate limit
-  knobs (defaults to 20/1200ms ≈ 1000/min per buyer).
+- `BUYER_API_CONCURRENCY` / `BUYER_API_BATCH_DELAY_MS` — pacing used in
+  rate-limited mode (defaults to 20/1200ms ≈ 1000/min per buyer).
+- `FAST_MODE_CONCURRENCY` — batch size used when rate-limited mode is
+  toggled off in the admin dashboard (default 200, no delay between
+  batches). Whether rate limiting is on or off is a DB setting, not an env
+  var - see "Scrub speed" above.
 - `DEFAULT_TOTAL_DAILY_LIMIT` — seed value for the global capacity ceiling
   (1,000,000), applied on first boot only and editable from the admin
   dashboard afterward.

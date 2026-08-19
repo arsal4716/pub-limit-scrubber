@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const Publisher = require("../models/Publisher");
 const ScrubJob = require("../models/ScrubJob");
-const { updateGlobalDailyLimit } = require("../services/limitService");
+const { getOrCreateGlobalConfig, updateGlobalDailyLimit, updateRateLimitMode } = require("../services/limitService");
 const {
   validateGlobalLimitChange,
   validatePublisherLimitChange,
@@ -12,12 +12,16 @@ const {
 const { todayKey } = require("../utils/dateKey");
 
 async function getConfig(req, res) {
-  const snapshot = await getGlobalCapacitySnapshot();
+  const [snapshot, globalConfig] = await Promise.all([
+    getGlobalCapacitySnapshot(),
+    getOrCreateGlobalConfig(),
+  ]);
   res.json({
     totalDailyLimit: snapshot.totalDailyLimit,
     usedToday: snapshot.committed, // sum of active publishers' own daily limits
     remainingToday: snapshot.remaining,
     activePublisherCount: snapshot.activePublisherCount,
+    rateLimitEnabled: globalConfig.rateLimitEnabled,
     dateKey: todayKey(),
   });
 }
@@ -31,6 +35,16 @@ async function updateConfig(req, res) {
   await validateGlobalLimitChange(totalDailyLimit);
   const config = await updateGlobalDailyLimit(totalDailyLimit);
   res.json({ totalDailyLimit: config.totalDailyLimit });
+}
+
+async function updateRateLimit(req, res) {
+  const { enabled } = req.body;
+  if (typeof enabled !== "boolean") {
+    return res.status(400).json({ error: "enabled must be a boolean" });
+  }
+
+  const config = await updateRateLimitMode(enabled);
+  res.json({ rateLimitEnabled: config.rateLimitEnabled });
 }
 
 async function listPublishers(req, res) {
@@ -150,6 +164,7 @@ async function deleteJob(req, res) {
 module.exports = {
   getConfig,
   updateConfig,
+  updateRateLimit,
   listPublishers,
   createPublisher,
   updatePublisher,

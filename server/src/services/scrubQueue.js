@@ -4,6 +4,7 @@ const Publisher = require("../models/Publisher");
 const { analyzeFile, writeOutputFile } = require("./csvService");
 const { processPhonesSplit, leadsPerMinuteRate } = require("./buyerApiClient");
 const { getPublisherBuyerLimits } = require("./buyerLimitService");
+const { getOrCreateGlobalConfig } = require("./limitService");
 const { detectDelimiter } = require("../utils/csvDelimiter");
 
 function applyBuyerStat(stat, status) {
@@ -70,8 +71,12 @@ async function runJob(jobId) {
   if (!job) return;
   if (job.status === "completed") return;
 
-  const publisher = await Publisher.findById(job.publisherId);
+  const [publisher, globalConfig] = await Promise.all([
+    Publisher.findById(job.publisherId),
+    getOrCreateGlobalConfig(),
+  ]);
   const buyerLimits = getPublisherBuyerLimits(publisher ? publisher.dailyLimit : 0);
+  const rateLimitEnabled = globalConfig.rateLimitEnabled;
 
   job.status = "analyzing";
   job.startedAt = job.startedAt || new Date();
@@ -92,7 +97,9 @@ async function runJob(jobId) {
   // as results arrive) rather than being sliced off upfront.
   job.allowedCount = analysis.uniquePhonesOrdered.length;
   job.skippedOverLimitCount = 0;
-  job.estimatedSeconds = Math.ceil((job.allowedCount / leadsPerMinuteRate()) * 60);
+  job.rateLimitEnabled = rateLimitEnabled;
+  const rate = leadsPerMinuteRate(rateLimitEnabled);
+  job.estimatedSeconds = rate ? Math.ceil((job.allowedCount / rate) * 60) : 0;
   job.status = "processing";
   await job.save();
 
@@ -111,6 +118,7 @@ async function runJob(jobId) {
       analysis.phoneStates,
       job.publisherId,
       buyerLimits,
+      rateLimitEnabled,
       (phone, result) => {
         phoneResults.set(phone, result);
         applyResultToJob(job, result);
