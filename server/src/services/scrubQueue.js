@@ -77,6 +77,7 @@ async function runJob(jobId) {
   ]);
   const buyerLimits = getPublisherBuyerLimits(publisher ? publisher.dailyLimit : 0);
   const rateLimitEnabled = globalConfig.rateLimitEnabled;
+  const ratePerMinute = globalConfig.rateLimitPerMinute;
 
   job.status = "analyzing";
   job.startedAt = job.startedAt || new Date();
@@ -98,7 +99,8 @@ async function runJob(jobId) {
   job.allowedCount = analysis.uniquePhonesOrdered.length;
   job.skippedOverLimitCount = 0;
   job.rateLimitEnabled = rateLimitEnabled;
-  const rate = leadsPerMinuteRate(rateLimitEnabled);
+  job.rateLimitPerMinute = ratePerMinute;
+  const rate = leadsPerMinuteRate(rateLimitEnabled, ratePerMinute);
   job.estimatedSeconds = rate ? Math.ceil((job.allowedCount / rate) * 60) : 0;
   job.status = "processing";
   await job.save();
@@ -119,6 +121,7 @@ async function runJob(jobId) {
       job.publisherId,
       buyerLimits,
       rateLimitEnabled,
+      ratePerMinute,
       (phone, result) => {
         phoneResults.set(phone, result);
         applyResultToJob(job, result);

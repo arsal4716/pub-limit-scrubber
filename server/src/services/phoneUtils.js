@@ -1,3 +1,5 @@
+const { AREA_CODE_TO_STATE } = require("../data/areaCodeToState");
+
 // Accepts any US phone format (with/without country code, punctuation,
 // spaces, or a trailing extension) and normalizes it to 10 digits, or
 // returns null if it isn't a valid US number.
@@ -102,16 +104,29 @@ function normalizeStateCode(raw) {
 
 // Extracts a lead's state from the row, normalized to a 2-letter code
 // (abbreviation or full name, any case, both accepted). Returns null if no
-// recognized state column is present or it's blank - callers that require
-// a state (e.g. the HC buyer API) must handle that case.
+// recognized state column is present or it's blank - callers should fall
+// back to deriveStateFromAreaCode before giving up entirely.
 function extractStateFromRow(row) {
   return normalizeStateCode(findValueByHeaders(row, STATE_HEADER_CANDIDATES));
+}
+
+// Falls back to the phone's own area code when the file has no state
+// column (or a blank value for that row) - e.g. a normalized phone
+// "6142345678" starts with area code 614, which is Ohio. Returns null for
+// an area code not in the table (unassigned, toll-free/N11, or otherwise
+// non-geographic) rather than guessing.
+function deriveStateFromAreaCode(normalizedPhone) {
+  if (!normalizedPhone || normalizedPhone.length !== 10) return null;
+  const areaCode = normalizedPhone.slice(0, 3);
+  const state = AREA_CODE_TO_STATE[areaCode];
+  return state ? normalizeStateCode(state) : null;
 }
 
 module.exports = {
   normalizePhone,
   extractPhoneFromRow,
   extractStateFromRow,
+  deriveStateFromAreaCode,
   normalizeStateCode,
   PHONE_HEADER_CANDIDATES,
   STATE_HEADER_CANDIDATES,

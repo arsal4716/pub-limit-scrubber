@@ -44,13 +44,13 @@ module.exports = {
   hcBuyerApiTimeoutMs: toInt(process.env.HC_BUYER_API_TIMEOUT_MS, 5000),
   hcVendorApiKey: process.env.HC_VENDOR_API_KEY || "",
 
-  // Per-buyer rate limiting, used when the admin "rate limit mode" toggle
-  // is ON: CONCURRENCY phones every BATCH_DELAY_MS. LM and HC each run
-  // their own independent, concurrently-running loop over their half of
-  // the unique phone list, so default 20/1200ms sustains ~1000/min per
-  // buyer = ~2000 unique phones/min combined.
+  // Batch size used when the admin "rate limit mode" toggle is ON. LM and
+  // HC each run their own independent, concurrently-running loop over
+  // their half of the unique phone list, sending this many requests per
+  // batch; the delay between batches is computed from the admin-editable
+  // target rate (GlobalConfig.rateLimitPerMinute, default 1000/min per
+  // buyer) rather than being fixed here - see buyerApiClient.js.
   buyerApiConcurrency: toInt(process.env.BUYER_API_CONCURRENCY, 20),
-  buyerApiBatchDelayMs: toInt(process.env.BUYER_API_BATCH_DELAY_MS, 1200),
 
   // Used when rate limit mode is OFF: a much larger batch size and no
   // delay between batches - phones are scrubbed as fast as the buyer APIs

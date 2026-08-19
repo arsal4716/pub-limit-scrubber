@@ -20,12 +20,14 @@ async function updateGlobalDailyLimit(totalDailyLimit) {
   );
 }
 
-async function updateRateLimitMode(enabled) {
-  return GlobalConfig.findOneAndUpdate(
-    { key: "global" },
-    { rateLimitEnabled: enabled },
-    { upsert: true, new: true }
-  );
+// `updates` may include `enabled` and/or `ratePerMinute` - only the
+// provided fields are changed.
+async function updateRateLimitSettings({ enabled, ratePerMinute } = {}) {
+  const update = {};
+  if (enabled !== undefined) update.rateLimitEnabled = enabled;
+  if (ratePerMinute !== undefined) update.rateLimitPerMinute = ratePerMinute;
+
+  return GlobalConfig.findOneAndUpdate({ key: "global" }, update, { upsert: true, new: true });
 }
 
-module.exports = { getOrCreateGlobalConfig, updateGlobalDailyLimit, updateRateLimitMode };
+module.exports = { getOrCreateGlobalConfig, updateGlobalDailyLimit, updateRateLimitSettings };

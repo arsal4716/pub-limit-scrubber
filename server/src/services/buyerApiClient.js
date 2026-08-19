@@ -92,16 +92,21 @@ async function checkPhoneWithBuyer(buyerKey, phone, state, publisherId, dailyLim
 }
 
 // Runs one buyer's half of the split. When `rateLimitEnabled` is true,
-// paces at env.buyerApiConcurrency phones every env.buyerApiBatchDelayMs
-// (~1000/min per buyer). When false, batches at the larger
-// env.fastModeConcurrency with no delay between batches - phones are
-// scrubbed as fast as the buyer API and network allow. Either way, if any
-// call in a batch comes back 429 (Too Many Requests), the loop pauses for
-// a randomized 3-4s before starting the next batch, regardless of mode -
-// hammering an already-rate-limited API is never useful.
-async function processPhonesForBuyer(buyerKey, phones, phoneStates, publisherId, dailyLimit, rateLimitEnabled, onResult, onProgress) {
+// paces at env.buyerApiConcurrency phones every batch, with the delay
+// between batches computed from the admin-configurable `ratePerMinute`
+// target (concurrency stays fixed - a bigger/smaller gap between batches
+// is what actually changes the rate, so the burst size hitting the buyer
+// API per batch never grows unboundedly at high targets). When
+// rateLimitEnabled is false, batches at the larger env.fastModeConcurrency
+// with no delay between batches - phones are scrubbed as fast as the
+// buyer API and network allow. Either way, if any call in a batch comes
+// back 429 (Too Many Requests), the loop pauses for a randomized 3-4s
+// before starting the next batch, regardless of mode - hammering an
+// already-rate-limited API is never useful.
+async function processPhonesForBuyer(buyerKey, phones, phoneStates, publisherId, dailyLimit, rateLimitEnabled, ratePerMinute, onResult, onProgress) {
   const slot = BUYER_SLOT[buyerKey];
   const batchSize = rateLimitEnabled ? env.buyerApiConcurrency : env.fastModeConcurrency;
+  const batchDelayMs = rateLimitEnabled ? (batchSize / ratePerMinute) * 60 * 1000 : 0;
   let processed = 0;
 
   for (let i = 0; i < phones.length; i += batchSize) {
@@ -125,7 +130,7 @@ async function processPhonesForBuyer(buyerKey, phones, phoneStates, publisherId,
     if (batchResults.some((r) => r.rateLimited)) {
       await sleep(rateLimitBackoffMs());
     } else if (rateLimitEnabled) {
-      await sleep(env.buyerApiBatchDelayMs);
+      await sleep(batchDelayMs);
     }
   }
 }
@@ -135,14 +140,15 @@ async function processPhonesForBuyer(buyerKey, phones, phoneStates, publisherId,
 // concurrently against `publisherId`'s own allotment from each buyer.
 // `buyerLimits` is `{ LM, HC }`, that publisher's own dailyLimit split
 // 50/50 (see buyerLimitService.getPublisherBuyerLimits). `rateLimitEnabled`
-// selects the throttled (~1000/min/buyer) or fast (as-fast-as-possible)
-// pacing profile - see processPhonesForBuyer. `phoneStates` maps a
-// normalized phone to its state code (for HC). `onResult(phone, result)`
+// selects the throttled or fast (as-fast-as-possible) pacing profile;
+// `ratePerMinute` is the admin-configurable per-buyer target used only
+// when rate limiting is on - see processPhonesForBuyer. `phoneStates` maps
+// a normalized phone to its state code (for HC). `onResult(phone, result)`
 // fires per phone with `{ slot, buyerKey, status, message, raw }` -
 // exactly one buyer's result, since each phone is only ever routed to one.
 // `onBatchDone(processedSoFar, total)` fires after either loop makes
 // progress, so callers can persist combined progress for polling clients.
-async function processPhonesSplit(phones, phoneStates, publisherId, buyerLimits, rateLimitEnabled, onResult, onBatchDone) {
+async function processPhonesSplit(phones, phoneStates, publisherId, buyerLimits, rateLimitEnabled, ratePerMinute, onResult, onBatchDone) {
   const total = phones.length;
   const mid = Math.ceil(total / 2);
   const buyer1Phones = phones.slice(0, mid);
@@ -155,11 +161,11 @@ async function processPhonesSplit(phones, phoneStates, publisherId, buyerLimits,
   };
 
   await Promise.all([
-    processPhonesForBuyer("LM", buyer1Phones, phoneStates, publisherId, buyerLimits.LM, rateLimitEnabled, onResult, async (n) => {
+    processPhonesForBuyer("LM", buyer1Phones, phoneStates, publisherId, buyerLimits.LM, rateLimitEnabled, ratePerMinute, onResult, async (n) => {
       buyer1Done = n;
       await reportProgress();
     }),
-    processPhonesForBuyer("HC", buyer2Phones, phoneStates, publisherId, buyerLimits.HC, rateLimitEnabled, onResult, async (n) => {
+    processPhonesForBuyer("HC", buyer2Phones, phoneStates, publisherId, buyerLimits.HC, rateLimitEnabled, ratePerMinute, onResult, async (n) => {
       buyer2Done = n;
       await reportProgress();
     }),
@@ -167,14 +173,14 @@ async function processPhonesSplit(phones, phoneStates, publisherId, buyerLimits,
 }
 
 // Combined sustained throughput across BOTH buyers running in parallel on
-// their own half of the list, e.g. 20/1.2s per buyer = ~1000/min per buyer
-// = ~2000 unique phones/min overall. Returns null when rate limiting is
+// their own half of the list, e.g. an admin-set 1000/min per buyer =
+// ~2000 unique phones/min overall. Returns null when rate limiting is
 // disabled - there's no fixed pace to report, throughput is however fast
 // the buyer APIs and network allow, so callers should show that instead
 // of fabricating a number.
-function leadsPerMinuteRate(rateLimitEnabled = true) {
+function leadsPerMinuteRate(rateLimitEnabled = true, ratePerMinute = 1000) {
   if (!rateLimitEnabled) return null;
-  return 2 * ((env.buyerApiConcurrency / env.buyerApiBatchDelayMs) * 60 * 1000);
+  return 2 * ratePerMinute;
 }
 
 module.exports = { processPhonesSplit, leadsPerMinuteRate };

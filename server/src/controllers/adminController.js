@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const Publisher = require("../models/Publisher");
 const ScrubJob = require("../models/ScrubJob");
-const { getOrCreateGlobalConfig, updateGlobalDailyLimit, updateRateLimitMode } = require("../services/limitService");
+const { getOrCreateGlobalConfig, updateGlobalDailyLimit, updateRateLimitSettings } = require("../services/limitService");
 const {
   validateGlobalLimitChange,
   validatePublisherLimitChange,
@@ -22,6 +22,7 @@ async function getConfig(req, res) {
     remainingToday: snapshot.remaining,
     activePublisherCount: snapshot.activePublisherCount,
     rateLimitEnabled: globalConfig.rateLimitEnabled,
+    rateLimitPerMinute: globalConfig.rateLimitPerMinute,
     dateKey: todayKey(),
   });
 }
@@ -38,13 +39,20 @@ async function updateConfig(req, res) {
 }
 
 async function updateRateLimit(req, res) {
-  const { enabled } = req.body;
-  if (typeof enabled !== "boolean") {
+  const { enabled, ratePerMinute } = req.body;
+
+  if (enabled === undefined && ratePerMinute === undefined) {
+    return res.status(400).json({ error: "enabled and/or ratePerMinute is required" });
+  }
+  if (enabled !== undefined && typeof enabled !== "boolean") {
     return res.status(400).json({ error: "enabled must be a boolean" });
   }
+  if (ratePerMinute !== undefined && (!Number.isFinite(ratePerMinute) || ratePerMinute <= 0)) {
+    return res.status(400).json({ error: "ratePerMinute must be a positive number" });
+  }
 
-  const config = await updateRateLimitMode(enabled);
-  res.json({ rateLimitEnabled: config.rateLimitEnabled });
+  const config = await updateRateLimitSettings({ enabled, ratePerMinute });
+  res.json({ rateLimitEnabled: config.rateLimitEnabled, rateLimitPerMinute: config.rateLimitPerMinute });
 }
 
 async function listPublishers(req, res) {

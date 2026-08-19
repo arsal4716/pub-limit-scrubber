@@ -8,11 +8,15 @@ const globalConfigSchema = new mongoose.Schema(
   {
     key: { type: String, required: true, unique: true, default: "global" },
     totalDailyLimit: { type: Number, required: true, min: 0 },
-    // true (default) = throttled to ~1000/min per buyer, matching existing
-    // behavior. false = no artificial pacing between batches - phones are
-    // scrubbed as fast as possible, still batched at a higher concurrency.
-    // See services/buyerApiClient.js.
+    // true (default) = throttled to rateLimitPerMinute per buyer. false =
+    // no artificial pacing between batches - phones are scrubbed as fast
+    // as possible, still batched at a higher concurrency. See
+    // services/buyerApiClient.js.
     rateLimitEnabled: { type: Boolean, default: true },
+    // Target requests/minute PER BUYER while rate limiting is on (default
+    // 1000, matching the original fixed pace) - admin-editable in the
+    // dashboard. Ignored when rateLimitEnabled is false.
+    rateLimitPerMinute: { type: Number, default: 1000, min: 1 },
   },
   { timestamps: true }
 );
