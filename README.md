@@ -151,10 +151,15 @@ A single global toggle in the admin dashboard (Overview tab) controls how
 aggressively both buyers' pacing loops run:
 
 - **Rate limited (default, ON)** — each buyer processes
-  `BUYER_API_CONCURRENCY` phones (default 20) every
-  `BUYER_API_BATCH_DELAY_MS` (default 1200ms), sustaining ~1000
-  requests/min per buyer, ~2000/min combined. This is the original,
-  conservative pace.
+  `BUYER_API_CONCURRENCY` phones (default 20) per batch, with the delay
+  between batches computed from an admin-configurable target rate
+  (`rateLimitPerMinute`, stored in the DB, default 1000/min per buyer —
+  2000/min combined). The same "Scrub speed" card that has the toggle also
+  lets the admin type a custom rate or pick a preset (1,000 / 2,000 / 3,000
+  / 5,000 per minute); changing it takes effect for the next job without a
+  restart. `BUYER_API_CONCURRENCY` only caps the batch size, not the rate —
+  raising the target rate shrinks the delay between batches rather than
+  growing how many requests go out at once.
 - **As fast as possible (OFF)** — each buyer instead batches
   `FAST_MODE_CONCURRENCY` phones (default 200) at a time with **no delay**
   between batches, so phones are scrubbed as quickly as the buyer APIs and
@@ -169,9 +174,10 @@ continuing to hammer an API that just asked to slow down. The phone(s)
 that received the 429 are recorded as `Error` for that buyer; there's no
 automatic retry of that specific phone.
 
-The toggle applies to jobs that start after it's changed — a job already
-running keeps whichever mode it started with (each `ScrubJob` records a
-snapshot of `rateLimitEnabled` at the time it began processing).
+The toggle and rate apply to jobs that start after they're changed — a job
+already running keeps whichever settings it started with (each `ScrubJob`
+records a snapshot of `rateLimitEnabled` and `rateLimitPerMinute` at the
+time it began processing).
 
 ## Limits: a daily limit per publisher, split 50/50
 
@@ -257,12 +263,14 @@ See `server/.env.example` for the full list, notably:
 - Publisher daily limits are **not** env vars - each is set per publisher
   from the admin dashboard's Publishers tab (split 50/50 between buyers
   automatically at scrub time).
-- `BUYER_API_CONCURRENCY` / `BUYER_API_BATCH_DELAY_MS` — pacing used in
-  rate-limited mode (defaults to 20/1200ms ≈ 1000/min per buyer).
+- `BUYER_API_CONCURRENCY` — batch size used in rate-limited mode (default
+  20). The target rate itself (default 1000/min per buyer) is **not** an
+  env var - it's a DB setting (`rateLimitPerMinute`) editable from the
+  admin dashboard's "Scrub speed" card, see above.
 - `FAST_MODE_CONCURRENCY` — batch size used when rate-limited mode is
   toggled off in the admin dashboard (default 200, no delay between
-  batches). Whether rate limiting is on or off is a DB setting, not an env
-  var - see "Scrub speed" above.
+  batches). Whether rate limiting is on or off, and the target rate, are
+  both DB settings, not env vars - see "Scrub speed" above.
 - `DEFAULT_TOTAL_DAILY_LIMIT` — seed value for the global capacity ceiling
   (1,000,000), applied on first boot only and editable from the admin
   dashboard afterward.

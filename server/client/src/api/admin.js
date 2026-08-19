@@ -10,8 +10,11 @@ export async function updateGlobalConfig(totalDailyLimit) {
   return data;
 }
 
-export async function updateRateLimitMode(enabled) {
-  const { data } = await client.put("/admin/rate-limit", { enabled });
+export async function updateRateLimitSettings({ enabled, ratePerMinute } = {}) {
+  const body = {};
+  if (enabled !== undefined) body.enabled = enabled;
+  if (ratePerMinute !== undefined) body.ratePerMinute = ratePerMinute;
+  const { data } = await client.put("/admin/rate-limit", body);
   return data;
 }
 

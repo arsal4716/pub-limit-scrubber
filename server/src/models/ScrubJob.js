@@ -58,11 +58,13 @@ const scrubJobSchema = new mongoose.Schema(
     },
 
     estimatedSeconds: { type: Number, default: 0 },
-    // Snapshot of the admin "rate limit mode" toggle at the time this job
-    // ran - true means throttled to ~1000/min/buyer, false means scrubbed
-    // as fast as possible. Recorded per-job since the global setting can
+    // Snapshot of the admin "rate limit mode" settings at the time this
+    // job ran - rateLimitEnabled true means throttled to rateLimitPerMinute
+    // per buyer, false means scrubbed as fast as possible (rateLimitPerMinute
+    // is then irrelevant). Recorded per-job since the global settings can
     // change between jobs.
     rateLimitEnabled: { type: Boolean, default: true },
+    rateLimitPerMinute: { type: Number, default: 1000 },
 
     startedAt: { type: Date, default: null },
     completedAt: { type: Date, default: null },
