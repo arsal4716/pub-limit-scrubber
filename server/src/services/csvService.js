@@ -1,6 +1,11 @@
 const fs = require("fs");
 const { parse, format } = require("fast-csv");
-const { normalizePhone, extractPhoneFromRow, extractStateFromRow } = require("./phoneUtils");
+const {
+  normalizePhone,
+  extractPhoneFromRow,
+  extractStateFromRow,
+  deriveStateFromAreaCode,
+} = require("./phoneUtils");
 const { BUYER_SLOT_LABEL } = require("../constants/buyers");
 
 // Pass 1: stream the uploaded file once to discover the total row count and
@@ -36,7 +41,12 @@ function analyzeFile(inputPath, delimiter = ",") {
         }
         seen.add(normalized);
         uniquePhonesOrdered.push(normalized);
-        phoneStates.set(normalized, extractStateFromRow(row));
+        // If the row has no state column (or it's blank), fall back to
+        // deriving the state from the phone's own area code rather than
+        // leaving it unset - the lead still gets scrubbed against HC
+        // instead of erroring out for a missing state.
+        const state = extractStateFromRow(row) || deriveStateFromAreaCode(normalized);
+        phoneStates.set(normalized, state);
       })
       .on("end", () => {
         resolve({ totalRows, invalidPhoneCount, duplicateInFileCount, uniquePhonesOrdered, phoneStates });

@@ -121,7 +121,7 @@ export default function UploadPage() {
               <p className="mt-1 font-mono text-xs text-slate-500">
                 {uploadRequirements.acceptedPhoneHeaders.join(", ")}
               </p>
-              <p className="mt-3 font-medium text-slate-700">...and a state column, e.g.:</p>
+              <p className="mt-3 font-medium text-slate-700">A state column is recommended, e.g.:</p>
               <p className="mt-1 font-mono text-xs text-slate-500">
                 {uploadRequirements.acceptedStateHeaders.join(", ")}
               </p>
@@ -130,8 +130,10 @@ export default function UploadPage() {
                 "Phone Number", "phone_number", and "PHONENUMBER" all work the same). Any US phone
                 format is accepted (with or without dashes, parentheses, or a leading 1). States can
                 be entered as a 2-letter code or a full name, in any case — "AZ", "az", and
-                "Arizona" all work. Comma- or semicolon-delimited CSV files are both supported
-                (delimiter is detected automatically).
+                "Arizona" all work. If a row has no state value, we automatically detect it from
+                the phone's area code, so a file with no state column at all still gets scrubbed.
+                Comma- or semicolon-delimited CSV files are both supported (delimiter is detected
+                automatically).
               </p>
             </div>
           )}

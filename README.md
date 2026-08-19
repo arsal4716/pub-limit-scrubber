@@ -19,12 +19,16 @@ dashboard for managing limits and reviewing scrub history.
    underscores, or hyphens (`phoneUtils.PHONE_HEADER_CANDIDATES`,
    `STATE_HEADER_CANDIDATES`, served via `GET /api/scrub/upload-requirements`
    so the UI can't drift out of sync with the actual parser). A state
-   column is required (2-letter code or full state name, any case — "AZ",
-   "az", and "Arizona" all work), used per-lead for the HC buyer call. The
-   server reads the file once to find every **unique, valid US phone
-   number** (any common format — dashes, parens, dots, a leading country
-   code, or a trailing extension are all handled), in the order they first
-   appear. Non-US-format phones are marked invalid and never sent to the
+   column is recommended (2-letter code or full state name, any case —
+   "AZ", "az", and "Arizona" all work), used per-lead for the HC buyer
+   call — if it's missing or blank for a row, the state is automatically
+   derived from that phone's own area code instead
+   (`phoneUtils.deriveStateFromAreaCode`), so a file with no state column
+   at all still gets fully scrubbed. The server reads the file once to
+   find every **unique, valid US phone number** (any common format —
+   dashes, parens, dots, a leading country code, or a trailing extension
+   are all handled), in the order they first appear. Non-US-format phones
+   are marked invalid and never sent to the
    buyer APIs.
 3. There's no upfront pool reservation — every unique phone in the file is
    attempted. Capacity is enforced live, per publisher (see "Limits: a
@@ -123,13 +127,16 @@ halves are processed concurrently, each in its own pacing loop:
   `HC_BUYER_API_URL`: `GET {HC_BUYER_API_URL}?state={state}&caller_id=1{phone}`,
   with an `x-vendor-api-key: {HC_VENDOR_API_KEY}` header — omitting it
   fails every call with `401 Unauthorized`. `state` is that lead's state
-  from the CSV (abbreviation or full name, any case). Duplicate/suppression
-  is read solely from the response's `phs_suppressed` field (`true` means
-  blocked) — the capacity/routing fields in the same response (`accept`,
-  `status`, `agents`, etc.) are informational only and don't affect the
-  scrub result. A lead with no state value is recorded as `Error` for HC
-  without calling the API (and without spending HC's daily quota) rather
-  than guessing a state.
+  from the CSV (abbreviation or full name, any case) or, if the row has no
+  state value, the state derived from the phone's own area code (see
+  `phoneUtils.deriveStateFromAreaCode` / `data/areaCodeToState.js`).
+  Duplicate/suppression is read solely from the response's
+  `phs_suppressed` field (`true` means blocked) — the capacity/routing
+  fields in the same response (`accept`, `status`, `agents`, etc.) are
+  informational only and don't affect the scrub result. A lead is only
+  recorded as `Error` for HC (without calling the API, and without
+  spending HC's daily quota) when NEITHER the CSV nor the area code yields
+  a state — e.g. a toll-free number, which isn't tied to any state.
 
 Network/API errors are recorded as `Error` for that phone rather than
 failing the whole job.
