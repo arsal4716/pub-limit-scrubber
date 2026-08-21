@@ -44,6 +44,15 @@ module.exports = {
   hcBuyerApiTimeoutMs: toInt(process.env.HC_BUYER_API_TIMEOUT_MS, 5000),
   hcVendorApiKey: process.env.HC_VENDOR_API_KEY || "",
 
+  // Our own internal DNC/duplicate check - every unique phone goes through
+  // this FIRST, before either buyer. It's not a third-party API with a
+  // quota, so it's never rate-limited - only `internalDncConcurrency` caps
+  // how many requests are in flight at once. Phones it flags as a
+  // duplicate are marked DNC and never sent to LM or HC at all.
+  internalDncApiUrl: process.env.INTERNAL_DNC_API_URL || "http://91.108.112.198:3000/check-number",
+  internalDncApiTimeoutMs: toInt(process.env.INTERNAL_DNC_API_TIMEOUT_MS, 5000),
+  internalDncConcurrency: toInt(process.env.INTERNAL_DNC_CONCURRENCY, 100),
+
   // Batch size used when the admin "rate limit mode" toggle is ON. LM and
   // HC each run their own independent, concurrently-running loop over
   // their half of the unique phone list, sending this many requests per

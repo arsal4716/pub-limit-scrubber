@@ -33,44 +33,49 @@ dashboard for managing limits and reviewing scrub history.
 3. There's no upfront pool reservation — every unique phone in the file is
    attempted. Capacity is enforced live, per publisher (see "Limits: a
    daily limit per publisher, split 50/50" below).
-4. LM and HC both scrub against the same underlying suppression data, so
-   checking a phone against both would be redundant. Instead, the unique
-   phones are **split roughly in half** (first half → buyer1/LM, second
-   half → buyer2/HC, in first-occurrence order — e.g. 90,000 unique phones
+4. Before either buyer sees a single phone, every unique phone is checked
+   against our own internal duplicate/DNC service first (see "Internal DNC
+   check" below). Anything it flags as a duplicate is marked `DNC` right
+   there and never sent to LM or HC at all; only the phones it clears go on
+   to the buyer split.
+6. LM and HC both scrub against the same underlying suppression data, so
+   checking a phone against both would be redundant. Instead, the unique,
+   non-DNC phones are **split roughly in half** (first half → buyer1/LM,
+   second half → buyer2/HC, in first-occurrence order — e.g. 90,000 phones
    become 45,000 to each buyer) and both halves are processed
-   **concurrently**, each throttled to ~1000 requests/minute (20 phones
-   every 1.2s per buyer) — so total throughput is ~2000 unique phones/minute
-   combined, not 1000. A publisher's own daily limit is split the same way
-   (a 100,000 limit means 50,000 checks against each buyer); once a
-   publisher has used up its half from a buyer today, any phone still
-   routed to that buyer is left `Not Checked` rather than redirected to the
-   other buyer.
-5. The server writes the **original file back out unchanged**, with columns
+   **concurrently**, each throttled to an admin-configurable target rate
+   (default 1000 requests/minute per buyer, see "Scrub speed" below) — so
+   total throughput is double the per-buyer rate, not the rate itself. A
+   publisher's own daily limit is split the same way (a 100,000 limit means
+   50,000 checks against each buyer); once a publisher has used up its half
+   from a buyer today, any phone still routed to that buyer is left `Not
+   Checked` rather than redirected to the other buyer.
+7. The server writes the **original file back out unchanged**, with columns
    appended: `NormalizedPhone`, `ScrubStatus` (`Processed`, `Duplicate In
-   File`, or `Invalid Phone`), `BuyerAssigned` (`Buyer 1` or `Buyer 2` — an
-   anonymized, fixed mapping; buyer1 = LM, buyer2 = HC — the output file
-   and the publisher-facing UI never name the real buyers), `BuyerStatus`
-   (`Available`, `Blocked`, `Error`, or `Not Checked` if that publisher's
-   allotment from that buyer was already used up today), and
-   `BuyerMessage`. Since each phone is checked by exactly one buyer, there's
-   a single status/message pair per row, not one per buyer. No original
-   data is ever lost.
-6. The publisher can leave the tab — the upload page polls job status and
-   shows an ETA (`leads remaining / ~2000 per minute combined`). A
-   shareable `/status/:jobId` link is also shown so they can check back
-   later.
-7. Every publisher's usage resets at midnight **America/New_York**
+   File`, or `Invalid Phone`), `BuyerAssigned` (`Buyer 1` or `Buyer 2`, blank
+   for a phone that never reached a buyer — an anonymized, fixed mapping;
+   buyer1 = LM, buyer2 = HC — the output file and the publisher-facing UI
+   never name the real buyers), `BuyerStatus` (`Available`, `Blocked`,
+   `Error`, `Not Checked` if that publisher's allotment from that buyer was
+   already used up today, or `DNC` if the internal duplicate check caught it
+   before either buyer), and `BuyerMessage`. Since each phone is checked by
+   at most one buyer, there's a single status/message pair per row, not one
+   per buyer. No original data is ever lost.
+8. The publisher can leave the tab — the upload page polls job status and
+   shows an ETA based on the current combined buyer rate. A shareable
+   `/status/:jobId` link is also shown so they can check back later.
+9. Every publisher's usage resets at midnight **America/New_York**
    (configurable) — usage is tracked per calendar day in that timezone, so
    nothing needs a cron job to "reset".
-8. Admins log in to `/admin` to add publishers with their own daily limit,
-   edit any publisher's limit later, enable/disable publishers, set the
-   global daily capacity ceiling (validated so the sum of active
-   publishers' limits can never exceed it), toggle scrub speed between
-   rate-limited and as-fast-as-possible (see "Scrub speed" below), and
-   browse every scrub job with full stats (including per-buyer blocked
-   counts), a download link, and a delete action (removes the job record
-   plus its input/output files; blocked while a job is still queued or in
-   progress).
+10. Admins log in to `/admin` to add publishers with their own daily limit,
+    edit any publisher's limit later, enable/disable publishers, set the
+    global daily capacity ceiling (validated so the sum of active
+    publishers' limits can never exceed it), toggle scrub speed and its
+    target rate (see "Scrub speed" below), and browse every scrub job with
+    full stats (including internal DNC and per-buyer blocked counts), a
+    download link, and a delete action (removes the job record plus its
+    input/output files; blocked while a job is still queued or in
+    progress).
 
 ## Stack
 
@@ -144,6 +149,35 @@ failing the whole job.
 Output columns and the publisher-facing summary only ever refer to
 `Buyer 1`/`Buyer 2` (buyer1 = LM, buyer2 = HC, fixed) — publishers never
 see which real buyer checked a given phone.
+
+## Internal DNC check (runs before either buyer)
+
+Every unique phone is checked against our own internal duplicate/DNC
+service first, configured via `INTERNAL_DNC_API_URL` (default
+`http://91.108.112.198:3000/check-number`):
+
+```
+POST {INTERNAL_DNC_API_URL}
+{ "phone": "(915)271-2882" }
+
+→ { "success": true, "phone": "9152712882", "status": "Not Duplicate" }
+```
+
+Any response where `status` isn't exactly `"Not Duplicate"` (or where the
+request errors/times out — see below) is treated as a duplicate: that
+phone is marked `DNC` in the output file and **never sent to LM or HC at
+all**, so it doesn't count against the publisher's daily limit or either
+buyer's quota. Only phones this check clears go on to the buyer split.
+
+This is our own service, not a third-party API with a rate limit, so it's
+never throttled — `INTERNAL_DNC_CONCURRENCY` (default 100) just caps how
+many requests are in flight at once so a huge file doesn't open thousands
+of sockets simultaneously.
+
+If the internal service itself is unreachable or errors, that individual
+phone **fails open** — it's treated as not a duplicate and still goes on
+to the buyer split — rather than blocking or mis-flagging real leads over
+a network blip on our own side. This is logged server-side for visibility.
 
 ## Scrub speed: rate limited vs. as fast as possible
 
@@ -260,6 +294,10 @@ See `server/.env.example` for the full list, notably:
   header on every HC call. Missing or wrong values fail with `401
   Unauthorized`. Never commit the real value - it belongs only in your
   actual (gitignored) `server/.env`.
+- `INTERNAL_DNC_API_URL` / `INTERNAL_DNC_API_TIMEOUT_MS` /
+  `INTERNAL_DNC_CONCURRENCY` — our own duplicate/DNC pre-check that every
+  phone goes through before either buyer, see "Internal DNC check" above.
+  Not rate-limited; the concurrency setting only caps in-flight requests.
 - Publisher daily limits are **not** env vars - each is set per publisher
   from the admin dashboard's Publishers tab (split 50/50 between buyers
   automatically at scrub time).

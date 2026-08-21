@@ -29,7 +29,11 @@ const scrubJobSchema = new mongoose.Schema(
     duplicateInFileCount: { type: Number, default: 0 },
     uniquePhoneCount: { type: Number, default: 0 },
 
-    allowedCount: { type: Number, default: 0 }, // = uniquePhoneCount; every unique phone is attempted
+    // Phones flagged as a duplicate by our own internal DNC check - these
+    // are never sent to either buyer at all.
+    internalDncCount: { type: Number, default: 0 },
+
+    allowedCount: { type: Number, default: 0 }, // = uniquePhoneCount - internalDncCount; sent to a buyer
     skippedOverLimitCount: { type: Number, default: 0 }, // tally of phones whose assigned buyer was out of quota (Not Checked)
 
     processedCount: { type: Number, default: 0 }, // progress counter

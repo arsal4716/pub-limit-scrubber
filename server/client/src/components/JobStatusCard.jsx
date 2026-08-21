@@ -82,6 +82,7 @@ export default function JobStatusCard({ jobId }) {
           <div className="grid grid-cols-2 gap-3 text-sm text-slate-600 sm:grid-cols-4">
             <Stat label="Total rows" value={job.totalRows} />
             <Stat label="Unique leads" value={job.uniquePhoneCount} />
+            <Stat label="DNC (duplicate)" value={job.internalDncCount} />
             <Stat label="Sent to buyer" value={job.allowedCount} />
             <Stat label="Skipped (limit)" value={job.skippedOverLimitCount} />
             <Stat label="Accepted" value={job.acceptedCount} />

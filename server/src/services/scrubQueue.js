@@ -3,6 +3,7 @@ const ScrubJob = require("../models/ScrubJob");
 const Publisher = require("../models/Publisher");
 const { analyzeFile, writeOutputFile } = require("./csvService");
 const { processPhonesSplit, leadsPerMinuteRate } = require("./buyerApiClient");
+const { checkPhonesForDnc } = require("./internalDncClient");
 const { getPublisherBuyerLimits } = require("./buyerLimitService");
 const { getOrCreateGlobalConfig } = require("./limitService");
 const { detectDelimiter } = require("../utils/csvDelimiter");
@@ -91,12 +92,30 @@ async function runJob(jobId) {
   job.duplicateInFileCount = analysis.duplicateInFileCount;
   job.uniquePhoneCount = analysis.uniquePhonesOrdered.length;
 
-  // Every unique phone is attempted - there's no pre-flight pool
-  // reservation anymore. Each buyer's own per-publisher daily allotment
-  // naturally caps how many actually get checked; anything over that
-  // comes back "Not Checked" per phone (tallied into skippedOverLimitCount
-  // as results arrive) rather than being sliced off upfront.
-  job.allowedCount = analysis.uniquePhonesOrdered.length;
+  // Every unique phone first goes through our own internal DNC/duplicate
+  // check - not rate-limited, run as fast as the service allows. Anything
+  // it flags as a duplicate is marked DNC right here and never reaches
+  // either buyer; only the rest proceed to the buyer split below.
+  const dncResults = await checkPhonesForDnc(analysis.uniquePhonesOrdered);
+  const phoneResults = new Map();
+  const phonesToProcess = [];
+
+  for (const phone of analysis.uniquePhonesOrdered) {
+    const dnc = dncResults.get(phone);
+    if (dnc && dnc.isDuplicate) {
+      phoneResults.set(phone, { slot: "", buyerKey: "", status: "DNC", message: "Duplicate - internal DNC list" });
+    } else {
+      phonesToProcess.push(phone);
+    }
+  }
+
+  // Each buyer's own per-publisher daily allotment naturally caps how many
+  // of the remaining (non-DNC) phones actually get checked; anything over
+  // that comes back "Not Checked" per phone (tallied into
+  // skippedOverLimitCount as results arrive) rather than being sliced off
+  // upfront.
+  job.internalDncCount = analysis.uniquePhonesOrdered.length - phonesToProcess.length;
+  job.allowedCount = phonesToProcess.length;
   job.skippedOverLimitCount = 0;
   job.rateLimitEnabled = rateLimitEnabled;
   job.rateLimitPerMinute = ratePerMinute;
@@ -104,9 +123,6 @@ async function runJob(jobId) {
   job.estimatedSeconds = rate ? Math.ceil((job.allowedCount / rate) * 60) : 0;
   job.status = "processing";
   await job.save();
-
-  const phonesToProcess = analysis.uniquePhonesOrdered;
-  const phoneResults = new Map();
 
   if (phonesToProcess.length > 0) {
     // LM and HC process their own half of the list concurrently, so
@@ -162,6 +178,7 @@ async function recoverInterruptedJobs() {
     job.blockedCount = 0;
     job.apiErrorCount = 0;
     job.skippedOverLimitCount = 0;
+    job.internalDncCount = 0;
     job.buyerStats = {
       buyer1: { blockedCount: 0, availableCount: 0, errorCount: 0, notCheckedCount: 0 },
       buyer2: { blockedCount: 0, availableCount: 0, errorCount: 0, notCheckedCount: 0 },
