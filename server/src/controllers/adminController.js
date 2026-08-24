@@ -9,7 +9,10 @@ const {
   getPublisherUsageSnapshot,
   getGlobalCapacitySnapshot,
 } = require("../services/buyerLimitService");
+const { hashPassword } = require("../services/publisherAuthService");
 const { todayKey } = require("../utils/dateKey");
+
+const MIN_PASSWORD_LENGTH = 8;
 
 async function getConfig(req, res) {
   const [snapshot, globalConfig] = await Promise.all([
@@ -56,7 +59,10 @@ async function updateRateLimit(req, res) {
 }
 
 async function listPublishers(req, res) {
-  const publishers = await Publisher.find().sort({ name: 1 });
+  // passwordHash is select:false by default - opt back in here just to
+  // derive the `canLogin` boolean below; the raw hash itself is never
+  // included in the response.
+  const publishers = await Publisher.find().select("+passwordHash").sort({ name: 1 });
   const dateKey = todayKey();
 
   const withUsage = await Promise.all(
@@ -65,8 +71,12 @@ async function listPublishers(req, res) {
       return {
         id: p._id,
         name: p.name,
+        email: p.email || null,
         dailyLimit: p.dailyLimit,
         active: p.active,
+        signupStatus: p.signupStatus,
+        allowedIps: p.allowedIps || [],
+        canLogin: !!p.passwordHash,
         usedToday: snapshot.usedToday,
         remainingToday: snapshot.remainingToday,
         buyers: snapshot.buyers, // per-buyer half-limit + usage, informational
@@ -79,17 +89,28 @@ async function listPublishers(req, res) {
 }
 
 async function createPublisher(req, res) {
-  const { name, dailyLimit } = req.body;
+  const { name, dailyLimit, email, password } = req.body;
   if (!name || !name.trim()) {
     return res.status(400).json({ error: "name is required" });
   }
   if (!Number.isFinite(dailyLimit) || dailyLimit < 0) {
     return res.status(400).json({ error: "dailyLimit must be a non-negative number" });
   }
+  if (password !== undefined && password !== "" && password.length < MIN_PASSWORD_LENGTH) {
+    return res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` });
+  }
 
   const existing = await Publisher.findOne({ slug: Publisher.toSlug(name) });
   if (existing) {
     return res.status(409).json({ error: "A publisher with this name already exists" });
+  }
+
+  const emailNormalized = email && email.trim() ? email.trim().toLowerCase() : null;
+  if (emailNormalized) {
+    const emailTaken = await Publisher.findOne({ email: emailNormalized });
+    if (emailTaken) {
+      return res.status(409).json({ error: "A publisher with this email already exists" });
+    }
   }
 
   await validatePublisherLimitChange({
@@ -98,13 +119,21 @@ async function createPublisher(req, res) {
     newLimit: dailyLimit,
   });
 
-  const publisher = await Publisher.create({ name: name.trim(), dailyLimit });
+  const publisher = new Publisher({ name: name.trim(), dailyLimit });
+  if (emailNormalized) publisher.email = emailNormalized;
+  // Admin-provisioned publishers are trusted immediately - no separate
+  // approval step, unlike a public self-service signup. If no password is
+  // set here, the publisher simply can't log in yet until an admin sets
+  // one later or the publisher "claims" this name through the signup form.
+  if (password) publisher.passwordHash = await hashPassword(password);
+  await publisher.save();
+
   res.status(201).json({ id: publisher._id, name: publisher.name, dailyLimit: publisher.dailyLimit });
 }
 
 async function updatePublisher(req, res) {
   const { id } = req.params;
-  const { dailyLimit, active, name } = req.body;
+  const { dailyLimit, active, name, email, password, allowedIps, signupStatus } = req.body;
 
   const publisher = await Publisher.findById(id);
   if (!publisher) return res.status(404).json({ error: "Publisher not found" });
@@ -124,8 +153,48 @@ async function updatePublisher(req, res) {
   if (active !== undefined) publisher.active = !!active;
   if (name !== undefined && name.trim()) publisher.name = name.trim();
 
+  if (email !== undefined) {
+    const emailNormalized = email && email.trim() ? email.trim().toLowerCase() : null;
+    if (emailNormalized) {
+      const emailTaken = await Publisher.findOne({ email: emailNormalized, _id: { $ne: id } });
+      if (emailTaken) {
+        return res.status(409).json({ error: "A publisher with this email already exists" });
+      }
+    }
+    publisher.email = emailNormalized || undefined;
+  }
+
+  if (password !== undefined && password !== "") {
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      return res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` });
+    }
+    publisher.passwordHash = await hashPassword(password);
+  }
+
+  if (allowedIps !== undefined) {
+    if (!Array.isArray(allowedIps) || !allowedIps.every((ip) => typeof ip === "string")) {
+      return res.status(400).json({ error: "allowedIps must be an array of IP address strings" });
+    }
+    publisher.allowedIps = allowedIps.map((ip) => ip.trim()).filter(Boolean);
+  }
+
+  if (signupStatus !== undefined) {
+    if (!["pending", "approved", "rejected"].includes(signupStatus)) {
+      return res.status(400).json({ error: "Invalid signupStatus" });
+    }
+    publisher.signupStatus = signupStatus;
+  }
+
   await publisher.save();
-  res.json({ id: publisher._id, name: publisher.name, dailyLimit: publisher.dailyLimit, active: publisher.active });
+  res.json({
+    id: publisher._id,
+    name: publisher.name,
+    email: publisher.email || null,
+    dailyLimit: publisher.dailyLimit,
+    active: publisher.active,
+    signupStatus: publisher.signupStatus,
+    allowedIps: publisher.allowedIps,
+  });
 }
 
 async function listJobs(req, res) {

@@ -1,18 +1,61 @@
 # Pub Limit Scrubber
 
 A MERN app for scrubbing publisher lead files against two rate-limited buyer
-APIs (LM and HC). Each publisher has its own admin-set daily limit, split
-50/50 between the two buyers when scrubbing, and a global daily capacity
-ceiling caps the sum of every active publisher's limit. Includes an admin
-dashboard for managing limits and reviewing scrub history.
+APIs (LM and HC). Each publisher has its own account (signup + admin
+approval) and can only ever see and download their own files - each other's
+uploads are invisible even to another logged-in publisher. Each publisher
+has its own admin-set daily limit, split 50/50 between the two buyers when
+scrubbing, and a global daily capacity ceiling caps the sum of every active
+publisher's limit. Includes an admin dashboard for managing publishers,
+limits, and IP restrictions, and for reviewing scrub history.
+
+## Publisher accounts: signup, approval, and per-publisher IP restriction
+
+Publishers used to just type their name into a free-text field with no
+password - anyone who knew (or guessed) another publisher's name could
+upload and download files under that name. That's now closed: every
+publisher has a real account, and access to a job's status/output is
+checked against who's actually logged in, never against a name someone
+typed in.
+
+1. A new publisher visits `/signup` and registers with a publisher name,
+   email, and password (`POST /api/publisher-auth/signup`). The request
+   lands as `pending` - they **cannot log in yet**.
+2. An admin reviews pending signups from the Publishers tab and clicks
+   Approve (or Reject). Only an `approved` publisher can log in;
+   `pending` and `rejected` are both blocked with a clear message.
+3. Once approved, the publisher logs in at `/login` with their name and
+   password (`POST /api/publisher-auth/login`), which returns a JWT
+   (`PUBLISHER_JWT_SECRET`, separate from the admin's own JWT secret so
+   the two token types can never be mistaken for each other). `/signup`
+   and `/login` link to each other for anyone who lands on the wrong one.
+4. Every upload, status check, download, and job listing requires that
+   token and is scoped server-side to `req.publisher` from the token -
+   **never** to a name or ID passed in the request. A job that belongs to
+   someone else comes back as a plain 404 ("Job not found"), not 403, so a
+   guessed job ID can't even be used to confirm another publisher's job
+   exists. Admins can still see and download any job from the dashboard,
+   using their own separate admin token.
+5. An admin can optionally set one or more **allowed login IPs** per
+   publisher ("Manage access" in the Publishers tab). If none are set,
+   that publisher can log in from anywhere with the right credentials -
+   if any are set, login only succeeds from one of those exact IPs (this
+   is checked once, at login time, not on every subsequent request).
+   Requires `TRUST_PROXY=true` (the default) if the app runs behind a
+   reverse proxy/load balancer, so the real client IP is what's checked
+   rather than the proxy's.
+6. Admins can also create a publisher directly (Publishers tab → "Add
+   publisher") with an optional email/password - useful for pre-approved
+   accounts that skip the signup queue entirely. Leaving the password
+   blank there just defers it: the admin can set one later from "Manage
+   access", or the publisher can "claim" that exact name by signing up
+   themselves (still subject to admin approval, so a reserved name can't
+   be silently taken over by someone else signing up for it first).
 
 ## How it works
 
-1. A publisher visits the site and enters their publisher name. This is
-   validated against the admin-managed publisher list before they can move
-   on — an unrecognized or disabled name is blocked right there with a clear
-   error, and never reaches the upload step. Once validated, they see their
-   own admin-set daily limit and how many leads they can still scrub today.
+1. A publisher signs up and logs in (see above), then sees their own
+   admin-set daily limit and how many leads they can still scrub today.
 2. They upload a CSV lead file (any size — files are streamed, not loaded
    into memory; comma- or semicolon-delimited files are both auto-detected).
    Column headers are matched automatically regardless of case, spacing,
@@ -33,44 +76,51 @@ dashboard for managing limits and reviewing scrub history.
 3. There's no upfront pool reservation — every unique phone in the file is
    attempted. Capacity is enforced live, per publisher (see "Limits: a
    daily limit per publisher, split 50/50" below).
-4. LM and HC both scrub against the same underlying suppression data, so
-   checking a phone against both would be redundant. Instead, the unique
-   phones are **split roughly in half** (first half → buyer1/LM, second
-   half → buyer2/HC, in first-occurrence order — e.g. 90,000 unique phones
+4. Before either buyer sees a single phone, every unique phone is checked
+   against our own internal duplicate/DNC service first (see "Internal DNC
+   check" below). Anything it flags as a duplicate is marked `DNC` right
+   there and never sent to LM or HC at all; only the phones it clears go on
+   to the buyer split.
+6. LM and HC both scrub against the same underlying suppression data, so
+   checking a phone against both would be redundant. Instead, the unique,
+   non-DNC phones are **split roughly in half** (first half → buyer1/LM,
+   second half → buyer2/HC, in first-occurrence order — e.g. 90,000 phones
    become 45,000 to each buyer) and both halves are processed
-   **concurrently**, each throttled to ~1000 requests/minute (20 phones
-   every 1.2s per buyer) — so total throughput is ~2000 unique phones/minute
-   combined, not 1000. A publisher's own daily limit is split the same way
-   (a 100,000 limit means 50,000 checks against each buyer); once a
-   publisher has used up its half from a buyer today, any phone still
-   routed to that buyer is left `Not Checked` rather than redirected to the
-   other buyer.
-5. The server writes the **original file back out unchanged**, with columns
+   **concurrently**, each throttled to an admin-configurable target rate
+   (default 1000 requests/minute per buyer, see "Scrub speed" below) — so
+   total throughput is double the per-buyer rate, not the rate itself. A
+   publisher's own daily limit is split the same way (a 100,000 limit means
+   50,000 checks against each buyer); once a publisher has used up its half
+   from a buyer today, any phone still routed to that buyer is left `Not
+   Checked` rather than redirected to the other buyer.
+7. The server writes the **original file back out unchanged**, with columns
    appended: `NormalizedPhone`, `ScrubStatus` (`Processed`, `Duplicate In
-   File`, or `Invalid Phone`), `BuyerAssigned` (`Buyer 1` or `Buyer 2` — an
-   anonymized, fixed mapping; buyer1 = LM, buyer2 = HC — the output file
-   and the publisher-facing UI never name the real buyers), `BuyerStatus`
-   (`Available`, `Blocked`, `Error`, or `Not Checked` if that publisher's
-   allotment from that buyer was already used up today), and
-   `BuyerMessage`. Since each phone is checked by exactly one buyer, there's
-   a single status/message pair per row, not one per buyer. No original
-   data is ever lost.
-6. The publisher can leave the tab — the upload page polls job status and
-   shows an ETA (`leads remaining / ~2000 per minute combined`). A
-   shareable `/status/:jobId` link is also shown so they can check back
-   later.
-7. Every publisher's usage resets at midnight **America/New_York**
+   File`, or `Invalid Phone`), `BuyerAssigned` (`Buyer 1` or `Buyer 2`, blank
+   for a phone that never reached a buyer — an anonymized, fixed mapping;
+   buyer1 = LM, buyer2 = HC — the output file and the publisher-facing UI
+   never name the real buyers), `BuyerStatus` (`Available`, `Blocked`,
+   `Error`, `Not Checked` if that publisher's allotment from that buyer was
+   already used up today, or `DNC` if the internal duplicate check caught it
+   before either buyer), and `BuyerMessage`. Since each phone is checked by
+   at most one buyer, there's a single status/message pair per row, not one
+   per buyer. No original data is ever lost.
+8. The publisher can leave the tab — the upload page polls job status and
+   shows an ETA based on the current combined buyer rate. A `/status/:jobId`
+   link is also shown so they can check back later - it still requires
+   being logged in as the owning publisher (or as admin), so it's only
+   useful to reopen in your own browser, not to hand to someone else.
+9. Every publisher's usage resets at midnight **America/New_York**
    (configurable) — usage is tracked per calendar day in that timezone, so
    nothing needs a cron job to "reset".
-8. Admins log in to `/admin` to add publishers with their own daily limit,
-   edit any publisher's limit later, enable/disable publishers, set the
-   global daily capacity ceiling (validated so the sum of active
-   publishers' limits can never exceed it), toggle scrub speed between
-   rate-limited and as-fast-as-possible (see "Scrub speed" below), and
-   browse every scrub job with full stats (including per-buyer blocked
-   counts), a download link, and a delete action (removes the job record
-   plus its input/output files; blocked while a job is still queued or in
-   progress).
+10. Admins log in to `/admin` to add publishers with their own daily limit,
+    edit any publisher's limit later, enable/disable publishers, set the
+    global daily capacity ceiling (validated so the sum of active
+    publishers' limits can never exceed it), toggle scrub speed and its
+    target rate (see "Scrub speed" below), and browse every scrub job with
+    full stats (including internal DNC and per-buyer blocked counts), a
+    download link, and a delete action (removes the job record plus its
+    input/output files; blocked while a job is still queued or in
+    progress).
 
 ## Stack
 
@@ -144,6 +194,35 @@ failing the whole job.
 Output columns and the publisher-facing summary only ever refer to
 `Buyer 1`/`Buyer 2` (buyer1 = LM, buyer2 = HC, fixed) — publishers never
 see which real buyer checked a given phone.
+
+## Internal DNC check (runs before either buyer)
+
+Every unique phone is checked against our own internal duplicate/DNC
+service first, configured via `INTERNAL_DNC_API_URL` (default
+`http://91.108.112.198:3000/check-number`):
+
+```
+POST {INTERNAL_DNC_API_URL}
+{ "phone": "(915)271-2882" }
+
+→ { "success": true, "phone": "9152712882", "status": "Not Duplicate" }
+```
+
+Any response where `status` isn't exactly `"Not Duplicate"` (or where the
+request errors/times out — see below) is treated as a duplicate: that
+phone is marked `DNC` in the output file and **never sent to LM or HC at
+all**, so it doesn't count against the publisher's daily limit or either
+buyer's quota. Only phones this check clears go on to the buyer split.
+
+This is our own service, not a third-party API with a rate limit, so it's
+never throttled — `INTERNAL_DNC_CONCURRENCY` (default 100) just caps how
+many requests are in flight at once so a huge file doesn't open thousands
+of sockets simultaneously.
+
+If the internal service itself is unreachable or errors, that individual
+phone **fails open** — it's treated as not a duplicate and still goes on
+to the buyer split — rather than blocking or mis-flagging real leads over
+a network blip on our own side. This is logged server-side for visibility.
 
 ## Scrub speed: rate limited vs. as fast as possible
 
@@ -260,6 +339,10 @@ See `server/.env.example` for the full list, notably:
   header on every HC call. Missing or wrong values fail with `401
   Unauthorized`. Never commit the real value - it belongs only in your
   actual (gitignored) `server/.env`.
+- `INTERNAL_DNC_API_URL` / `INTERNAL_DNC_API_TIMEOUT_MS` /
+  `INTERNAL_DNC_CONCURRENCY` — our own duplicate/DNC pre-check that every
+  phone goes through before either buyer, see "Internal DNC check" above.
+  Not rate-limited; the concurrency setting only caps in-flight requests.
 - Publisher daily limits are **not** env vars - each is set per publisher
   from the admin dashboard's Publishers tab (split 50/50 between buyers
   automatically at scrub time).
@@ -277,17 +360,21 @@ See `server/.env.example` for the full list, notably:
 - `LIMIT_RESET_TIMEZONE` — defaults to `America/New_York`.
 - `ADMIN_USERNAME` / `ADMIN_PASSWORD` / `ADMIN_JWT_SECRET` — single-admin
   login. There's no multi-user admin system in this version.
+- `PUBLISHER_JWT_SECRET` / `PUBLISHER_JWT_EXPIRES_IN` — publisher login
+  tokens, see "Publisher accounts" above. Uses its own secret, separate
+  from `ADMIN_JWT_SECRET`.
+- `TRUST_PROXY` — defaults to `true`; set to `false` only if this app is
+  NOT running behind a reverse proxy/load balancer. Needed for
+  per-publisher IP allowlisting to see the real client IP.
 
 ## Notes & known limitations
 
-- Publishers can't see each other's names or upload activity: the home page
-  is a plain free-text field (no autocomplete/dropdown of existing
-  publishers), and the only public publisher-related endpoint
-  (`GET /api/publishers/validate?name=`) resolves one exact name at a time
-  and never returns a list — only the JWT-protected admin API can list every
-  publisher. Both the home page and the upload page call this endpoint to
-  gate progress and show the publisher their own daily limit; the upload
-  endpoint independently re-validates server-side regardless.
+- Every publisher-facing API route is scoped server-side to whichever
+  publisher is authenticated by the request's JWT - never to a name, ID,
+  or other identifier passed in the request body/query. A job that
+  belongs to a different publisher comes back as a 404, not a 403, so it
+  can't even be used to confirm that job exists. Only the JWT-protected
+  admin API can list every publisher.
 - Admin auth is a single hardcoded account from env vars — sufficient for an
   internal tool, but swap in a real user store if multiple admins with
   different roles are ever needed.

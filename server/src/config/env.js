@@ -23,6 +23,20 @@ module.exports = {
   adminJwtSecret: process.env.ADMIN_JWT_SECRET || "dev-only-insecure-secret",
   adminJwtExpiresIn: process.env.ADMIN_JWT_EXPIRES_IN || "12h",
 
+  // Publisher login (separate account per publisher - signup, admin
+  // approval, optional per-publisher IP allowlist). Uses its own JWT
+  // secret so a leaked/expired publisher token can never be mistaken for
+  // an admin token or vice versa.
+  publisherJwtSecret: process.env.PUBLISHER_JWT_SECRET || "dev-only-insecure-publisher-secret",
+  publisherJwtExpiresIn: process.env.PUBLISHER_JWT_EXPIRES_IN || "12h",
+
+  // Whether to trust the X-Forwarded-For header for the client's real IP
+  // (needed for per-publisher IP allowlisting to work at all when the app
+  // sits behind a reverse proxy/load balancer). Only set this to true when
+  // there actually IS a trusted proxy in front of the app - otherwise a
+  // client can forge X-Forwarded-For and bypass the IP allowlist entirely.
+  trustProxy: process.env.TRUST_PROXY !== "false",
+
   // LM (ACA) - callgrid. Falls back to the legacy BUYER_API_URL (with any
   // trailing "?CallerId=" stripped) so existing deployments keep working
   // until their .env is updated to the LM_* names.
@@ -43,6 +57,15 @@ module.exports = {
     process.env.HC_BUYER_API_URL || "https://api.nextgeninsurancesolutionsinc.com/vendor-availability",
   hcBuyerApiTimeoutMs: toInt(process.env.HC_BUYER_API_TIMEOUT_MS, 5000),
   hcVendorApiKey: process.env.HC_VENDOR_API_KEY || "",
+
+  // Our own internal DNC/duplicate check - every unique phone goes through
+  // this FIRST, before either buyer. It's not a third-party API with a
+  // quota, so it's never rate-limited - only `internalDncConcurrency` caps
+  // how many requests are in flight at once. Phones it flags as a
+  // duplicate are marked DNC and never sent to LM or HC at all.
+  internalDncApiUrl: process.env.INTERNAL_DNC_API_URL || "http://91.108.112.198:3000/check-number",
+  internalDncApiTimeoutMs: toInt(process.env.INTERNAL_DNC_API_TIMEOUT_MS, 5000),
+  internalDncConcurrency: toInt(process.env.INTERNAL_DNC_CONCURRENCY, 100),
 
   // Batch size used when the admin "rate limit mode" toggle is ON. LM and
   // HC each run their own independent, concurrently-running loop over

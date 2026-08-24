@@ -52,6 +52,7 @@ export default function JobsTable() {
               <th className="text-left px-4 py-2 font-medium">Date</th>
               <th className="text-right px-4 py-2 font-medium">Rows</th>
               <th className="text-right px-4 py-2 font-medium">Unique</th>
+              <th className="text-right px-4 py-2 font-medium">DNC</th>
               <th className="text-right px-4 py-2 font-medium">Sent</th>
               <th className="text-right px-4 py-2 font-medium">Accepted</th>
               <th className="text-right px-4 py-2 font-medium">Blocked</th>
@@ -73,6 +74,7 @@ export default function JobsTable() {
                 </td>
                 <td className="px-4 py-2.5 text-right">{job.totalRows}</td>
                 <td className="px-4 py-2.5 text-right">{job.uniquePhoneCount}</td>
+                <td className="px-4 py-2.5 text-right">{job.internalDncCount ?? 0}</td>
                 <td className="px-4 py-2.5 text-right">{job.allowedCount}</td>
                 <td className="px-4 py-2.5 text-right">{job.acceptedCount}</td>
                 <td className="px-4 py-2.5 text-right">{job.blockedCount}</td>
@@ -104,7 +106,7 @@ export default function JobsTable() {
             ))}
             {jobs.length === 0 && (
               <tr>
-                <td colSpan={12} className="px-4 py-6 text-center text-slate-400">
+                <td colSpan={13} className="px-4 py-6 text-center text-slate-400">
                   No scrub jobs yet.
                 </td>
               </tr>
