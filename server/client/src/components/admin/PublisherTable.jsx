@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchAdminPublishers,
@@ -7,6 +7,12 @@ import {
 } from "../../api/admin";
 import ProgressBar from "../ProgressBar.jsx";
 
+const STATUS_STYLES = {
+  approved: "bg-emerald-100 text-emerald-700",
+  pending: "bg-amber-100 text-amber-700",
+  rejected: "bg-red-100 text-red-700",
+};
+
 export default function PublisherTable() {
   const queryClient = useQueryClient();
   const { data } = useQuery({ queryKey: ["admin-publishers"], queryFn: fetchAdminPublishers });
@@ -14,8 +20,13 @@ export default function PublisherTable() {
 
   const [newName, setNewName] = useState("");
   const [newLimit, setNewLimit] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editValue, setEditValue] = useState("");
+  const [accessId, setAccessId] = useState(null);
+  const [ipsValue, setIpsValue] = useState("");
+  const [passwordValue, setPasswordValue] = useState("");
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["admin-publishers"] });
@@ -23,10 +34,18 @@ export default function PublisherTable() {
   };
 
   const createMutation = useMutation({
-    mutationFn: () => createAdminPublisher(newName.trim(), Number(newLimit)),
+    mutationFn: () =>
+      createAdminPublisher({
+        name: newName.trim(),
+        dailyLimit: Number(newLimit),
+        email: newEmail.trim() || undefined,
+        password: newPassword || undefined,
+      }),
     onSuccess: () => {
       setNewName("");
       setNewLimit("");
+      setNewEmail("");
+      setNewPassword("");
       invalidate();
     },
   });
@@ -61,6 +80,30 @@ export default function PublisherTable() {
     updateMutation.mutate({ id: pub.id, updates: { active: !pub.active } });
   }
 
+  function setSignupStatus(pub, signupStatus) {
+    updateMutation.mutate({ id: pub.id, updates: { signupStatus } });
+  }
+
+  function openAccess(pub) {
+    setAccessId(accessId === pub.id ? null : pub.id);
+    setIpsValue((pub.allowedIps || []).join(", "));
+    setPasswordValue("");
+  }
+
+  function saveIps(pub) {
+    const allowedIps = ipsValue
+      .split(",")
+      .map((ip) => ip.trim())
+      .filter(Boolean);
+    updateMutation.mutate({ id: pub.id, updates: { allowedIps } });
+  }
+
+  function savePassword(pub) {
+    if (passwordValue.length < 8) return;
+    updateMutation.mutate({ id: pub.id, updates: { password: passwordValue } });
+    setPasswordValue("");
+  }
+
   return (
     <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
       <div className="p-5 border-b border-slate-100">
@@ -86,6 +129,26 @@ export default function PublisherTable() {
               placeholder="100000"
             />
           </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Email (optional)</label>
+            <input
+              type="email"
+              value={newEmail}
+              onChange={(e) => setNewEmail(e.target.value)}
+              className="w-48 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              placeholder="contact@acme.com"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Password (optional)</label>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              className="w-40 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              placeholder="Leave blank for now"
+            />
+          </div>
           <button
             type="submit"
             disabled={createMutation.isPending}
@@ -95,8 +158,9 @@ export default function PublisherTable() {
           </button>
         </form>
         <p className="mt-2 text-xs text-slate-400">
-          A publisher's daily limit is split 50/50 between the two buyers when scrubbing (e.g. a
-          100,000 limit sends 50,000 leads to each buyer).
+          A publisher's daily limit is split 50/50 between the two buyers when scrubbing. If you
+          skip the password here, this publisher can't log in until you set one later ("Manage
+          access" below) or they submit a signup request for the same name.
         </p>
         {createMutation.isError && (
           <p className="mt-2 text-sm text-red-600">
@@ -109,6 +173,7 @@ export default function PublisherTable() {
         <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
           <tr>
             <th className="text-left px-5 py-2 font-medium">Publisher</th>
+            <th className="text-left px-5 py-2 font-medium">Email</th>
             <th className="text-left px-5 py-2 font-medium">Today's usage</th>
             <th className="text-left px-5 py-2 font-medium">Daily limit</th>
             <th className="text-left px-5 py-2 font-medium">LM</th>
@@ -119,80 +184,163 @@ export default function PublisherTable() {
         </thead>
         <tbody className="divide-y divide-slate-100">
           {publishers.map((pub) => (
-            <tr key={pub.id}>
-              <td className="px-5 py-3 text-slate-700">{pub.name}</td>
-              <td className="px-5 py-3 w-48">
-                <p className="text-xs text-slate-500 mb-1">
-                  {pub.usedToday.toLocaleString()} / {pub.dailyLimit.toLocaleString()}
-                </p>
-                <ProgressBar value={pub.usedToday} max={pub.dailyLimit || 1} colorClass="bg-emerald-600" />
-              </td>
-              <td className="px-5 py-3">
-                {editingId === pub.id ? (
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min="0"
-                      value={editValue}
-                      onChange={(e) => setEditValue(e.target.value)}
-                      className="w-28 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-                      autoFocus
-                    />
+            <Fragment key={pub.id}>
+              <tr>
+                <td className="px-5 py-3 text-slate-700">{pub.name}</td>
+                <td className="px-5 py-3 text-slate-500 text-xs">{pub.email || "—"}</td>
+                <td className="px-5 py-3 w-48">
+                  <p className="text-xs text-slate-500 mb-1">
+                    {pub.usedToday.toLocaleString()} / {pub.dailyLimit.toLocaleString()}
+                  </p>
+                  <ProgressBar value={pub.usedToday} max={pub.dailyLimit || 1} colorClass="bg-emerald-600" />
+                </td>
+                <td className="px-5 py-3">
+                  {editingId === pub.id ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="0"
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        className="w-28 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => saveEdit(pub.id)}
+                        className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => setEditingId(null)}
+                        className="text-xs text-slate-400 hover:text-slate-600"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    pub.dailyLimit.toLocaleString()
+                  )}
+                </td>
+                {["LM", "HC"].map((key) => {
+                  const buyer = pub.buyers.find((b) => b.key === key);
+                  return (
+                    <td key={key} className="px-5 py-3 text-slate-600 text-xs">
+                      {buyer.usedToday.toLocaleString()} / {buyer.dailyLimit.toLocaleString()}
+                    </td>
+                  );
+                })}
+                <td className="px-5 py-3">
+                  <div className="flex flex-col gap-1">
+                    <span
+                      className={`inline-flex w-fit items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                        pub.active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
+                      }`}
+                    >
+                      {pub.active ? "Active" : "Disabled"}
+                    </span>
+                    <span
+                      className={`inline-flex w-fit items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[pub.signupStatus]}`}
+                    >
+                      {pub.signupStatus}
+                    </span>
+                    {!pub.canLogin && (
+                      <span className="text-xs text-slate-400">No password set</span>
+                    )}
+                  </div>
+                </td>
+                <td className="px-5 py-3 text-right space-x-3 whitespace-nowrap">
+                  {pub.signupStatus === "pending" && (
+                    <>
+                      <button
+                        onClick={() => setSignupStatus(pub, "approved")}
+                        className="text-xs font-medium text-emerald-600 hover:text-emerald-800"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => setSignupStatus(pub, "rejected")}
+                        className="text-xs font-medium text-red-600 hover:text-red-800"
+                      >
+                        Reject
+                      </button>
+                    </>
+                  )}
+                  {editingId !== pub.id && (
                     <button
-                      onClick={() => saveEdit(pub.id)}
+                      onClick={() => startEdit(pub)}
                       className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
                     >
-                      Save
+                      Edit limit
                     </button>
-                    <button
-                      onClick={() => setEditingId(null)}
-                      className="text-xs text-slate-400 hover:text-slate-600"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
-                  pub.dailyLimit.toLocaleString()
-                )}
-              </td>
-              {["LM", "HC"].map((key) => {
-                const buyer = pub.buyers.find((b) => b.key === key);
-                return (
-                  <td key={key} className="px-5 py-3 text-slate-600 text-xs">
-                    {buyer.usedToday.toLocaleString()} / {buyer.dailyLimit.toLocaleString()}
-                  </td>
-                );
-              })}
-              <td className="px-5 py-3">
-                <span
-                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                    pub.active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
-                  }`}
-                >
-                  {pub.active ? "Active" : "Disabled"}
-                </span>
-              </td>
-              <td className="px-5 py-3 text-right space-x-3">
-                {editingId !== pub.id && (
+                  )}
                   <button
-                    onClick={() => startEdit(pub)}
-                    className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                    onClick={() => toggleActive(pub)}
+                    className="text-xs font-medium text-slate-500 hover:text-slate-700"
                   >
-                    Edit limit
+                    {pub.active ? "Disable" : "Enable"}
                   </button>
-                )}
-                <button
-                  onClick={() => toggleActive(pub)}
-                  className="text-xs font-medium text-slate-500 hover:text-slate-700"
-                >
-                  {pub.active ? "Disable" : "Enable"}
-                </button>
-              </td>
-            </tr>
+                  <button
+                    onClick={() => openAccess(pub)}
+                    className="text-xs font-medium text-slate-500 hover:text-slate-700"
+                  >
+                    Manage access
+                  </button>
+                </td>
+              </tr>
+              {accessId === pub.id && (
+                <tr className="bg-slate-50">
+                  <td colSpan={8} className="px-5 py-4">
+                    <div className="flex flex-wrap items-end gap-6">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">
+                          Allowed login IPs (comma-separated, blank = any IP)
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            value={ipsValue}
+                            onChange={(e) => setIpsValue(e.target.value)}
+                            placeholder="203.0.113.5, 198.51.100.20"
+                            className="w-80 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                          <button
+                            onClick={() => saveIps(pub)}
+                            className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                          >
+                            Save IPs
+                          </button>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">
+                          Set / reset password
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="password"
+                            value={passwordValue}
+                            onChange={(e) => setPasswordValue(e.target.value)}
+                            placeholder="At least 8 characters"
+                            className="w-56 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                          <button
+                            onClick={() => savePassword(pub)}
+                            disabled={passwordValue.length > 0 && passwordValue.length < 8}
+                            className="text-xs font-medium text-indigo-600 hover:text-indigo-800 disabled:opacity-40"
+                          >
+                            Save password
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </Fragment>
           ))}
           {publishers.length === 0 && (
             <tr>
-              <td colSpan={7} className="px-5 py-6 text-center text-slate-400 text-sm">
+              <td colSpan={8} className="px-5 py-6 text-center text-slate-400 text-sm">
                 No publishers yet. Add one above.
               </td>
             </tr>

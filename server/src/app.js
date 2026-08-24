@@ -1,20 +1,27 @@
 const path = require("path");
 const express = require("express");
 
+const env = require("./config/env");
 const authRoutes = require("./routes/authRoutes");
-const publisherRoutes = require("./routes/publisherRoutes");
+const publisherAuthRoutes = require("./routes/publisherAuthRoutes");
 const scrubRoutes = require("./routes/scrubRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const { notFound, errorHandler } = require("./middleware/errorHandler");
 
 const app = express();
 
+// Needed so req.ip reflects the real client IP (via X-Forwarded-For) when
+// running behind a reverse proxy/load balancer - otherwise every request
+// looks like it comes from the proxy, and per-publisher IP allowlisting
+// can never work. See env.trustProxy for the security tradeoff.
+app.set("trust proxy", env.trustProxy ? 1 : false);
+
 app.use(express.json());
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 
 app.use("/api/auth", authRoutes);
-app.use("/api/publishers", publisherRoutes);
+app.use("/api/publisher-auth", publisherAuthRoutes);
 app.use("/api/scrub", scrubRoutes);
 app.use("/api/admin", adminRoutes);
 

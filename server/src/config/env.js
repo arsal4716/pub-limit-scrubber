@@ -23,6 +23,20 @@ module.exports = {
   adminJwtSecret: process.env.ADMIN_JWT_SECRET || "dev-only-insecure-secret",
   adminJwtExpiresIn: process.env.ADMIN_JWT_EXPIRES_IN || "12h",
 
+  // Publisher login (separate account per publisher - signup, admin
+  // approval, optional per-publisher IP allowlist). Uses its own JWT
+  // secret so a leaked/expired publisher token can never be mistaken for
+  // an admin token or vice versa.
+  publisherJwtSecret: process.env.PUBLISHER_JWT_SECRET || "dev-only-insecure-publisher-secret",
+  publisherJwtExpiresIn: process.env.PUBLISHER_JWT_EXPIRES_IN || "12h",
+
+  // Whether to trust the X-Forwarded-For header for the client's real IP
+  // (needed for per-publisher IP allowlisting to work at all when the app
+  // sits behind a reverse proxy/load balancer). Only set this to true when
+  // there actually IS a trusted proxy in front of the app - otherwise a
+  // client can forge X-Forwarded-For and bypass the IP allowlist entirely.
+  trustProxy: process.env.TRUST_PROXY !== "false",
+
   // LM (ACA) - callgrid. Falls back to the legacy BUYER_API_URL (with any
   // trailing "?CallerId=" stripped) so existing deployments keep working
   // until their .env is updated to the LM_* names.

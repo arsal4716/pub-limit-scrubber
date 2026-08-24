@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { fetchJobStatus, downloadUrl } from "../api/scrub";
+import { fetchJobStatus, downloadScrubOutput } from "../api/scrub";
 import StatusBadge from "./StatusBadge.jsx";
 import ProgressBar from "./ProgressBar.jsx";
 
@@ -10,6 +11,8 @@ function formatMinutes(seconds) {
 }
 
 export default function JobStatusCard({ jobId }) {
+  const [downloadError, setDownloadError] = useState(null);
+
   const { data: job, error } = useQuery({
     queryKey: ["job-status", jobId],
     queryFn: () => fetchJobStatus(jobId),
@@ -18,6 +21,21 @@ export default function JobStatusCard({ jobId }) {
       return status === "completed" || status === "failed" ? false : 2500;
     },
   });
+
+  async function handleDownload() {
+    setDownloadError(null);
+    try {
+      const blob = await downloadScrubOutput(jobId);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `scrubbed-${job.originalFilename}`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setDownloadError("Couldn't download the file. Please try again.");
+    }
+  }
 
   if (error) {
     return (
@@ -94,12 +112,14 @@ export default function JobStatusCard({ jobId }) {
             <Stat label="Buyer 1 errors" value={job.buyerStats?.buyer1?.errorCount} />
             <Stat label="Buyer 2 errors" value={job.buyerStats?.buyer2?.errorCount} />
           </div>
-          <a
-            href={downloadUrl(job.id)}
+          <button
+            type="button"
+            onClick={handleDownload}
             className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-700"
           >
             Download scrubbed file
-          </a>
+          </button>
+          {downloadError && <p className="text-sm text-red-600">{downloadError}</p>}
         </div>
       )}
     </div>

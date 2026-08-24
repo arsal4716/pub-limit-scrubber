@@ -1,18 +1,61 @@
 # Pub Limit Scrubber
 
 A MERN app for scrubbing publisher lead files against two rate-limited buyer
-APIs (LM and HC). Each publisher has its own admin-set daily limit, split
-50/50 between the two buyers when scrubbing, and a global daily capacity
-ceiling caps the sum of every active publisher's limit. Includes an admin
-dashboard for managing limits and reviewing scrub history.
+APIs (LM and HC). Each publisher has its own account (signup + admin
+approval) and can only ever see and download their own files - each other's
+uploads are invisible even to another logged-in publisher. Each publisher
+has its own admin-set daily limit, split 50/50 between the two buyers when
+scrubbing, and a global daily capacity ceiling caps the sum of every active
+publisher's limit. Includes an admin dashboard for managing publishers,
+limits, and IP restrictions, and for reviewing scrub history.
+
+## Publisher accounts: signup, approval, and per-publisher IP restriction
+
+Publishers used to just type their name into a free-text field with no
+password - anyone who knew (or guessed) another publisher's name could
+upload and download files under that name. That's now closed: every
+publisher has a real account, and access to a job's status/output is
+checked against who's actually logged in, never against a name someone
+typed in.
+
+1. A new publisher visits `/signup` and registers with a publisher name,
+   email, and password (`POST /api/publisher-auth/signup`). The request
+   lands as `pending` - they **cannot log in yet**.
+2. An admin reviews pending signups from the Publishers tab and clicks
+   Approve (or Reject). Only an `approved` publisher can log in;
+   `pending` and `rejected` are both blocked with a clear message.
+3. Once approved, the publisher logs in at `/login` with their name and
+   password (`POST /api/publisher-auth/login`), which returns a JWT
+   (`PUBLISHER_JWT_SECRET`, separate from the admin's own JWT secret so
+   the two token types can never be mistaken for each other). `/signup`
+   and `/login` link to each other for anyone who lands on the wrong one.
+4. Every upload, status check, download, and job listing requires that
+   token and is scoped server-side to `req.publisher` from the token -
+   **never** to a name or ID passed in the request. A job that belongs to
+   someone else comes back as a plain 404 ("Job not found"), not 403, so a
+   guessed job ID can't even be used to confirm another publisher's job
+   exists. Admins can still see and download any job from the dashboard,
+   using their own separate admin token.
+5. An admin can optionally set one or more **allowed login IPs** per
+   publisher ("Manage access" in the Publishers tab). If none are set,
+   that publisher can log in from anywhere with the right credentials -
+   if any are set, login only succeeds from one of those exact IPs (this
+   is checked once, at login time, not on every subsequent request).
+   Requires `TRUST_PROXY=true` (the default) if the app runs behind a
+   reverse proxy/load balancer, so the real client IP is what's checked
+   rather than the proxy's.
+6. Admins can also create a publisher directly (Publishers tab → "Add
+   publisher") with an optional email/password - useful for pre-approved
+   accounts that skip the signup queue entirely. Leaving the password
+   blank there just defers it: the admin can set one later from "Manage
+   access", or the publisher can "claim" that exact name by signing up
+   themselves (still subject to admin approval, so a reserved name can't
+   be silently taken over by someone else signing up for it first).
 
 ## How it works
 
-1. A publisher visits the site and enters their publisher name. This is
-   validated against the admin-managed publisher list before they can move
-   on — an unrecognized or disabled name is blocked right there with a clear
-   error, and never reaches the upload step. Once validated, they see their
-   own admin-set daily limit and how many leads they can still scrub today.
+1. A publisher signs up and logs in (see above), then sees their own
+   admin-set daily limit and how many leads they can still scrub today.
 2. They upload a CSV lead file (any size — files are streamed, not loaded
    into memory; comma- or semicolon-delimited files are both auto-detected).
    Column headers are matched automatically regardless of case, spacing,
@@ -62,8 +105,10 @@ dashboard for managing limits and reviewing scrub history.
    at most one buyer, there's a single status/message pair per row, not one
    per buyer. No original data is ever lost.
 8. The publisher can leave the tab — the upload page polls job status and
-   shows an ETA based on the current combined buyer rate. A shareable
-   `/status/:jobId` link is also shown so they can check back later.
+   shows an ETA based on the current combined buyer rate. A `/status/:jobId`
+   link is also shown so they can check back later - it still requires
+   being logged in as the owning publisher (or as admin), so it's only
+   useful to reopen in your own browser, not to hand to someone else.
 9. Every publisher's usage resets at midnight **America/New_York**
    (configurable) — usage is tracked per calendar day in that timezone, so
    nothing needs a cron job to "reset".
@@ -315,17 +360,21 @@ See `server/.env.example` for the full list, notably:
 - `LIMIT_RESET_TIMEZONE` — defaults to `America/New_York`.
 - `ADMIN_USERNAME` / `ADMIN_PASSWORD` / `ADMIN_JWT_SECRET` — single-admin
   login. There's no multi-user admin system in this version.
+- `PUBLISHER_JWT_SECRET` / `PUBLISHER_JWT_EXPIRES_IN` — publisher login
+  tokens, see "Publisher accounts" above. Uses its own secret, separate
+  from `ADMIN_JWT_SECRET`.
+- `TRUST_PROXY` — defaults to `true`; set to `false` only if this app is
+  NOT running behind a reverse proxy/load balancer. Needed for
+  per-publisher IP allowlisting to see the real client IP.
 
 ## Notes & known limitations
 
-- Publishers can't see each other's names or upload activity: the home page
-  is a plain free-text field (no autocomplete/dropdown of existing
-  publishers), and the only public publisher-related endpoint
-  (`GET /api/publishers/validate?name=`) resolves one exact name at a time
-  and never returns a list — only the JWT-protected admin API can list every
-  publisher. Both the home page and the upload page call this endpoint to
-  gate progress and show the publisher their own daily limit; the upload
-  endpoint independently re-validates server-side regardless.
+- Every publisher-facing API route is scoped server-side to whichever
+  publisher is authenticated by the request's JWT - never to a name, ID,
+  or other identifier passed in the request body/query. A job that
+  belongs to a different publisher comes back as a 404, not a 403, so it
+  can't even be used to confirm that job exists. Only the JWT-protected
+  admin API can list every publisher.
 - Admin auth is a single hardcoded account from env vars — sufficient for an
   internal tool, but swap in a real user store if multiple admins with
   different roles are ever needed.

@@ -1,6 +1,5 @@
 const fs = require("fs");
 const path = require("path");
-const Publisher = require("../models/Publisher");
 const ScrubJob = require("../models/ScrubJob");
 const { enqueueJob, pendingPhoneCountAhead } = require("../services/scrubQueue");
 const { leadsPerMinuteRate } = require("../services/buyerApiClient");
@@ -38,25 +37,15 @@ function jobToStatusDto(job) {
 }
 
 async function uploadFile(req, res) {
-  const { publisherName } = req.body;
-
-  if (!publisherName || !publisherName.trim()) {
-    cleanupUpload(req);
-    return res.status(400).json({ error: "publisherName is required" });
-  }
   if (!req.file) {
     return res.status(400).json({ error: "A CSV file is required" });
   }
 
-  const slug = Publisher.toSlug(publisherName);
-  const publisher = await Publisher.findOne({ slug, active: true });
-
-  if (!publisher) {
-    cleanupUpload(req);
-    return res.status(404).json({
-      error: `Publisher "${publisherName}" is not recognized. Ask an admin to add it first.`,
-    });
-  }
+  // req.publisher comes from the requirePublisher auth middleware - never
+  // trust a publisher name/id from the request body for this, otherwise
+  // any logged-in publisher could upload (and later download) files under
+  // another publisher's name just by knowing it.
+  const publisher = req.publisher;
 
   const job = await ScrubJob.create({
     publisherId: publisher._id,
@@ -75,21 +64,22 @@ async function uploadFile(req, res) {
   });
 }
 
-function cleanupUpload(req) {
-  if (req.jobDir) {
-    fs.rm(req.jobDir, { recursive: true, force: true }, () => {});
-  }
+// A job that exists but belongs to someone else is reported as "not
+// found" rather than "forbidden" - that way a publisher (or a guessed
+// job ID) can't even confirm another publisher's job exists.
+function isOwnJob(req, job) {
+  return req.isAdmin || String(job.publisherId) === String(req.publisher._id);
 }
 
 async function getStatus(req, res) {
   const job = await ScrubJob.findById(req.params.jobId);
-  if (!job) return res.status(404).json({ error: "Job not found" });
+  if (!job || !isOwnJob(req, job)) return res.status(404).json({ error: "Job not found" });
   res.json(jobToStatusDto(job));
 }
 
 async function downloadOutput(req, res) {
   const job = await ScrubJob.findById(req.params.jobId);
-  if (!job) return res.status(404).json({ error: "Job not found" });
+  if (!job || !isOwnJob(req, job)) return res.status(404).json({ error: "Job not found" });
   if (job.status !== "completed" || !job.outputPath) {
     return res.status(409).json({ error: "File is not ready yet" });
   }
@@ -110,16 +100,10 @@ function getUploadRequirements(req, res) {
 }
 
 async function listJobsForPublisher(req, res) {
-  const { publisherName } = req.query;
-  if (!publisherName) {
-    return res.status(400).json({ error: "publisherName query param is required" });
-  }
-
-  const slug = Publisher.toSlug(publisherName);
-  const publisher = await Publisher.findOne({ slug });
-  if (!publisher) return res.json({ jobs: [] });
-
-  const jobs = await ScrubJob.find({ publisherId: publisher._id })
+  // req.publisher (from requirePublisher) - never take this from a query
+  // param, otherwise any logged-in publisher could list another
+  // publisher's jobs just by passing their name.
+  const jobs = await ScrubJob.find({ publisherId: req.publisher._id })
     .sort({ createdAt: -1 })
     .limit(20);
 
