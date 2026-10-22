@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchAdminJobs, deleteAdminJob } from "../../api/admin";
 import StatusBadge from "../StatusBadge.jsx";
@@ -12,6 +13,9 @@ export default function JobsTable() {
   const { data } = useQuery({
     queryKey: ["admin-jobs", page],
     queryFn: () => fetchAdminJobs({ page, limit: 20 }),
+    // Keep the table live while anything on the page is still running.
+    refetchInterval: (query) =>
+      query.state.data?.jobs?.some((j) => !["completed", "failed"].includes(j.status)) ? 5000 : false,
   });
 
   const jobs = data?.jobs || [];
@@ -84,6 +88,12 @@ export default function JobsTable() {
                   <StatusBadge status={job.status} />
                 </td>
                 <td className="px-4 py-2.5 text-right space-x-3 whitespace-nowrap">
+                  <Link
+                    to={`/admin/jobs/${job._id}`}
+                    className="text-xs font-medium text-slate-600 hover:text-slate-900"
+                  >
+                    {DELETABLE_STATUSES.includes(job.status) ? "Details" : "Live status"}
+                  </Link>
                   {job.status === "completed" && (
                     <button
                       onClick={() => handleDownload(job)}

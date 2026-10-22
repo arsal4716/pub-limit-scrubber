@@ -7,6 +7,7 @@ import SignupPage from "./pages/SignupPage.jsx";
 import UploadPage from "./pages/UploadPage.jsx";
 import StatusPage from "./pages/StatusPage.jsx";
 import AdminLoginPage from "./pages/admin/AdminLoginPage.jsx";
+import AdminJobPage from "./pages/admin/AdminJobPage.jsx";
 import AdminDashboardPage from "./pages/admin/AdminDashboardPage.jsx";
 
 function App() {
@@ -25,6 +26,7 @@ function App() {
         <Route path="/admin/login" element={<AdminLoginPage />} />
         <Route element={<ProtectedRoute />}>
           <Route path="/admin" element={<AdminDashboardPage />} />
+          <Route path="/admin/jobs/:jobId" element={<AdminJobPage />} />
         </Route>
       </Route>
     </Routes>
