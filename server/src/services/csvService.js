@@ -3,6 +3,8 @@ const { parse, format } = require("fast-csv");
 const {
   normalizePhone,
   extractPhoneFromRow,
+  detectPhoneColumn,
+  PHONE_DETECT_SAMPLE_SIZE,
   extractStateFromRow,
   deriveStateFromAreaCode,
 } = require("./phoneUtils");
@@ -15,6 +17,20 @@ const { BUYER_SLOT_LABEL } = require("../constants/buyers");
 // the HC buyer) are kept in memory, not full rows, so this scales to
 // multi-million-row files without holding the whole file in RAM (unlike a
 // naive read-everything-into-an-array approach).
+//
+// The phone column is auto-detected (see phoneUtils.detectPhoneColumn) from
+// the first rows, so rows are buffered only until the sample fills.
+// Rejects with a PhoneColumnNotFoundError if no phone column exists.
+class PhoneColumnNotFoundError extends Error {
+  constructor() {
+    super(
+      "Phone number not found. We couldn't find a column of US phone numbers in your file. " +
+        "Please check the file has a phone column and try again."
+    );
+    this.userFacing = true;
+  }
+}
+
 function analyzeFile(inputPath, delimiter = ",") {
   return new Promise((resolve, reject) => {
     let totalRows = 0;
@@ -23,13 +39,12 @@ function analyzeFile(inputPath, delimiter = ",") {
     const seen = new Set();
     const uniquePhonesOrdered = [];
     const phoneStates = new Map();
+    let phoneColumn;
+    let pending = [];
 
-    fs.createReadStream(inputPath)
-      .pipe(parse({ headers: true, delimiter }))
-      .on("error", reject)
-      .on("data", (row) => {
+    const handleRow = (row) => {
         totalRows++;
-        const normalized = normalizePhone(extractPhoneFromRow(row));
+        const normalized = normalizePhone(extractPhoneFromRow(row, phoneColumn));
 
         if (!normalized) {
           invalidPhoneCount++;
@@ -47,9 +62,37 @@ function analyzeFile(inputPath, delimiter = ",") {
         // instead of erroring out for a missing state.
         const state = extractStateFromRow(row) || deriveStateFromAreaCode(normalized);
         phoneStates.set(normalized, state);
+    };
+
+    // Returns false (after rejecting) if no phone column could be found.
+    const decideColumn = () => {
+      phoneColumn = detectPhoneColumn(pending);
+      if (!phoneColumn) {
+        reject(new PhoneColumnNotFoundError());
+        return false;
+      }
+      pending.forEach(handleRow);
+      pending = [];
+      return true;
+    };
+
+    const stream = fs.createReadStream(inputPath).pipe(parse({ headers: true, delimiter }));
+    stream
+      .on("error", reject)
+      .on("data", (row) => {
+        if (phoneColumn === undefined) {
+          pending.push(row);
+          if (pending.length >= PHONE_DETECT_SAMPLE_SIZE && !decideColumn()) stream.destroy();
+          return;
+        }
+        handleRow(row);
       })
       .on("end", () => {
-        resolve({ totalRows, invalidPhoneCount, duplicateInFileCount, uniquePhonesOrdered, phoneStates });
+        if (phoneColumn === undefined && !decideColumn()) return;
+        if (uniquePhonesOrdered.length === 0) {
+          return reject(new PhoneColumnNotFoundError());
+        }
+        resolve({ totalRows, invalidPhoneCount, duplicateInFileCount, uniquePhonesOrdered, phoneStates, phoneColumn });
       });
   });
 }
@@ -60,7 +103,7 @@ function analyzeFile(inputPath, delimiter = ",") {
 // normalized phone to its buyer result - every unique, valid phone always
 // gets one (possibly "Not Checked" if that publisher's buyer allotment was
 // exhausted), since there's no pre-flight slicing anymore.
-function writeOutputFile(inputPath, outputPath, { phoneResults, delimiter = "," }) {
+function writeOutputFile(inputPath, outputPath, { phoneResults, delimiter = ",", phoneColumn }) {
   return new Promise((resolve, reject) => {
     const seenInPass2 = new Set();
     const writeStream = fs.createWriteStream(outputPath);
@@ -89,7 +132,7 @@ function writeOutputFile(inputPath, outputPath, { phoneResults, delimiter = "," 
         fail(err);
       })
       .on("data", (row) => {
-        const normalized = normalizePhone(extractPhoneFromRow(row));
+        const normalized = normalizePhone(extractPhoneFromRow(row, phoneColumn));
 
         let scrubStatus;
         // Each phone is routed to exactly one buyer, so there's a single
@@ -130,4 +173,4 @@ function writeOutputFile(inputPath, outputPath, { phoneResults, delimiter = "," 
   });
 }
 
-module.exports = { analyzeFile, writeOutputFile };
+module.exports = { analyzeFile, writeOutputFile, PhoneColumnNotFoundError };

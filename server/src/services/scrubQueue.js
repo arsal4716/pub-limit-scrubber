@@ -59,7 +59,9 @@ async function runLoop() {
       console.error(`[scrubQueue] job ${jobId} failed:`, err);
       await ScrubJob.findByIdAndUpdate(jobId, {
         status: "failed",
-        errorMessage: "An unexpected error occurred while processing this file. Please try again or contact an admin.",
+        errorMessage: err.userFacing
+          ? err.message
+          : "An unexpected error occurred while processing this file. Please try again or contact an admin.",
       });
     }
   }
@@ -159,7 +161,7 @@ async function runJob(jobId) {
   }
 
   const outputPath = path.join(path.dirname(job.inputPath), "output.csv");
-  await writeOutputFile(job.inputPath, outputPath, { phoneResults, delimiter });
+  await writeOutputFile(job.inputPath, outputPath, { phoneResults, delimiter, phoneColumn: analysis.phoneColumn });
 
   job.outputPath = outputPath;
   job.status = "completed";
