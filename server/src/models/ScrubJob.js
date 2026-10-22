@@ -16,7 +16,7 @@ const scrubJobSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["queued", "analyzing", "processing", "completed", "failed"],
+      enum: ["queued", "analyzing", "checking", "processing", "completed", "failed"],
       default: "queued",
       index: true,
     },
@@ -32,6 +32,7 @@ const scrubJobSchema = new mongoose.Schema(
     // Phones flagged as a duplicate by our own internal DNC check - these
     // are never sent to either buyer at all.
     internalDncCount: { type: Number, default: 0 },
+    dncCheckedCount: { type: Number, default: 0 }, // progress of the internal DNC pass
 
     allowedCount: { type: Number, default: 0 }, // = uniquePhoneCount - internalDncCount; sent to a buyer
     skippedOverLimitCount: { type: Number, default: 0 }, // tally of phones whose assigned buyer was out of quota (Not Checked)

@@ -59,7 +59,9 @@ async function runLoop() {
       console.error(`[scrubQueue] job ${jobId} failed:`, err);
       await ScrubJob.findByIdAndUpdate(jobId, {
         status: "failed",
-        errorMessage: "An unexpected error occurred while processing this file. Please try again or contact an admin.",
+        errorMessage: err.userFacing
+          ? err.message
+          : "An unexpected error occurred while processing this file. Please try again or contact an admin.",
       });
     }
   }
@@ -85,7 +87,15 @@ async function runJob(jobId) {
   await job.save();
 
   const delimiter = await detectDelimiter(job.inputPath);
-  const analysis = await analyzeFile(job.inputPath, delimiter);
+  let analyzeSaveChain = Promise.resolve();
+  const analysis = await analyzeFile(job.inputPath, delimiter, (p) => {
+    job.totalRows = p.totalRows;
+    job.uniquePhoneCount = p.uniqueCount;
+    job.duplicateInFileCount = p.duplicateInFileCount;
+    job.invalidPhoneCount = p.invalidPhoneCount;
+    analyzeSaveChain = analyzeSaveChain.then(() => job.save()).catch(() => {});
+  });
+  await analyzeSaveChain;
 
   job.totalRows = analysis.totalRows;
   job.invalidPhoneCount = analysis.invalidPhoneCount;
@@ -96,7 +106,16 @@ async function runJob(jobId) {
   // check - not rate-limited, run as fast as the service allows. Anything
   // it flags as a duplicate is marked DNC right here and never reaches
   // either buyer; only the rest proceed to the buyer split below.
-  const dncResults = await checkPhonesForDnc(analysis.uniquePhonesOrdered);
+  job.status = "checking";
+  await job.save();
+  let dncSaveChain = Promise.resolve();
+  const dncResults = await checkPhonesForDnc(analysis.uniquePhonesOrdered, undefined, (checked, duplicates) => {
+    job.dncCheckedCount = checked;
+    job.internalDncCount = duplicates;
+    dncSaveChain = dncSaveChain.then(() => job.save()).catch(() => {});
+    return dncSaveChain;
+  });
+  await dncSaveChain;
   const phoneResults = new Map();
   const phonesToProcess = [];
 
@@ -151,7 +170,7 @@ async function runJob(jobId) {
   }
 
   const outputPath = path.join(path.dirname(job.inputPath), "output.csv");
-  await writeOutputFile(job.inputPath, outputPath, { phoneResults, delimiter });
+  await writeOutputFile(job.inputPath, outputPath, { phoneResults, delimiter, phoneColumn: analysis.phoneColumn });
 
   job.outputPath = outputPath;
   job.status = "completed";
@@ -166,7 +185,7 @@ async function runJob(jobId) {
 // tradeoff for not needing to persist partial per-phone results.
 async function recoverInterruptedJobs() {
   const stuck = await ScrubJob.find({
-    status: { $in: ["queued", "analyzing", "processing"] },
+    status: { $in: ["queued", "analyzing", "checking", "processing"] },
   });
 
   for (const job of stuck) {
@@ -179,6 +198,7 @@ async function recoverInterruptedJobs() {
     job.apiErrorCount = 0;
     job.skippedOverLimitCount = 0;
     job.internalDncCount = 0;
+    job.dncCheckedCount = 0;
     job.buyerStats = {
       buyer1: { blockedCount: 0, availableCount: 0, errorCount: 0, notCheckedCount: 0 },
       buyer2: { blockedCount: 0, availableCount: 0, errorCount: 0, notCheckedCount: 0 },

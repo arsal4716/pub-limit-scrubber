@@ -18,6 +18,7 @@ function jobToStatusDto(job) {
     duplicateInFileCount: job.duplicateInFileCount,
     uniquePhoneCount: job.uniquePhoneCount,
     internalDncCount: job.internalDncCount,
+    dncCheckedCount: job.dncCheckedCount,
     allowedCount: job.allowedCount,
     skippedOverLimitCount: job.skippedOverLimitCount,
     processedCount: job.processedCount,

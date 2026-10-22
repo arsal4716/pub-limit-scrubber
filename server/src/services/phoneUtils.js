@@ -62,7 +62,51 @@ function findValueByHeaders(row, candidates) {
   return null;
 }
 
-function extractPhoneFromRow(row) {
+// Rows sampled to decide which column holds phone numbers.
+const PHONE_DETECT_SAMPLE_SIZE = 200;
+
+// Picks the phone column for a file. A recognized phone header wins as long
+// as it holds at least one valid US number in the sample; otherwise every
+// column is scanned by content and the one where most values look like US
+// phone numbers (any format) is used, so files with odd/missing headers
+// still work. Returns the column key, or null if no phone column exists.
+function detectPhoneColumn(sampleRows) {
+  if (!sampleRows.length) return null;
+  const keys = Object.keys(sampleRows[0]);
+  const wanted = new Set(PHONE_HEADER_CANDIDATES.map(normalizeHeaderKey));
+
+  const validCounts = new Map();
+  for (const key of keys) {
+    let valid = 0;
+    for (const row of sampleRows) {
+      const value = row[key];
+      if (value !== undefined && value !== null && normalizePhone(String(value))) valid++;
+    }
+    validCounts.set(key, valid);
+  }
+
+  const headerKey = keys.find((k) => wanted.has(normalizeHeaderKey(k)) && validCounts.get(k) > 0);
+  if (headerKey) return headerKey;
+
+  let best = null;
+  let bestCount = 0;
+  for (const key of keys) {
+    const count = validCounts.get(key);
+    if (count > bestCount) {
+      best = key;
+      bestCount = count;
+    }
+  }
+  // Require a real share of the sample to look like phones, so a stray
+  // 10-digit ID in one row doesn't get mistaken for the phone column.
+  return best && bestCount >= Math.max(1, sampleRows.length * 0.3) ? best : null;
+}
+
+function extractPhoneFromRow(row, phoneColumn) {
+  if (phoneColumn) {
+    const value = row[phoneColumn];
+    return value === undefined || value === null || String(value).trim() === "" ? null : String(value);
+  }
   return findValueByHeaders(row, PHONE_HEADER_CANDIDATES);
 }
 
@@ -125,6 +169,8 @@ function deriveStateFromAreaCode(normalizedPhone) {
 module.exports = {
   normalizePhone,
   extractPhoneFromRow,
+  detectPhoneColumn,
+  PHONE_DETECT_SAMPLE_SIZE,
   extractStateFromRow,
   deriveStateFromAreaCode,
   normalizeStateCode,

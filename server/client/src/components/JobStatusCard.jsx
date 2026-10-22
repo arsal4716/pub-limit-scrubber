@@ -49,7 +49,6 @@ export default function JobStatusCard({ jobId }) {
     return <div className="text-sm text-slate-500">Loading job status...</div>;
   }
 
-  const isPreProcessing = job.status === "queued" || job.status === "analyzing";
   const remainingToProcess = Math.max(0, (job.allowedCount || 0) - (job.processedCount || 0));
   const hasEta = Boolean(job.leadsPerMinuteRate);
   const remainingSeconds = hasEta ? (remainingToProcess / job.leadsPerMinuteRate) * 60 : 0;
@@ -69,10 +68,37 @@ export default function JobStatusCard({ jobId }) {
         <p className="text-sm text-red-600">{job.errorMessage || "Something went wrong."}</p>
       )}
 
-      {isPreProcessing && (
+      {job.status === "queued" && (
         <p className="text-sm text-slate-500">
-          Reading your file and figuring out how many unique leads need scrubbing...
+          Your file is in the queue and will start shortly. Status: <strong>Pending</strong>.
         </p>
+      )}
+
+      {job.status === "analyzing" && (
+        <p className="text-sm text-slate-500">
+          Reading your file, detecting the phone number column, and finding unique leads...
+          {job.totalRows > 0 &&
+            ` ${job.totalRows.toLocaleString()} rows read so far, ${(job.uniquePhoneCount || 0).toLocaleString()} unique leads, ${(job.duplicateInFileCount || 0).toLocaleString()} duplicates in file.`}
+        </p>
+      )}
+
+      {job.status === "checking" && (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3 text-sm text-slate-600 sm:grid-cols-4">
+            <Stat label="Leads uploaded" value={job.totalRows} />
+            <Stat label="Unique leads found" value={job.uniquePhoneCount} />
+            <Stat label="Invalid / no phone" value={job.invalidPhoneCount} />
+            <Stat label="Duplicates in file" value={job.duplicateInFileCount} />
+            <Stat label="Duplicates found in DNC so far" value={job.internalDncCount} />
+            <Stat label="Remaining to check" value={Math.max(0, (job.uniquePhoneCount || 0) - (job.dncCheckedCount || 0))} />
+          </div>
+          <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-lg p-3">
+            Checking in internal DNC database: {(job.dncCheckedCount || 0).toLocaleString()} /{" "}
+            {(job.uniquePhoneCount || 0).toLocaleString()} leads checked. Next up: buyer scrub
+            (pending).
+          </p>
+          <ProgressBar value={job.dncCheckedCount || 0} max={job.uniquePhoneCount || 1} />
+        </div>
       )}
 
       {(job.status === "processing" || job.status === "completed") && (
@@ -84,6 +110,19 @@ export default function JobStatusCard({ jobId }) {
             <span>{job.status === "completed" ? "100%" : hasEta ? `~${etaText} left` : etaText}</span>
           </div>
           <ProgressBar value={job.processedCount} max={job.allowedCount || 1} />
+        </div>
+      )}
+
+      {job.status === "processing" && (
+        <div className="grid grid-cols-2 gap-3 text-sm text-slate-600 sm:grid-cols-4">
+          <Stat label="Scrubbed so far" value={job.processedCount} />
+          <Stat label="Remaining" value={Math.max(0, (job.allowedCount || 0) - (job.processedCount || 0))} />
+          <Stat label="Duplicates found so far" value={(job.internalDncCount || 0) + (job.blockedCount || 0) + (job.duplicateInFileCount || 0)} />
+          <Stat label="Accepted so far" value={job.acceptedCount} />
+          <Stat label="Leads uploaded" value={job.totalRows} />
+          <Stat label="Unique leads found" value={job.uniquePhoneCount} />
+          <Stat label="Duplicate in internal DNC" value={job.internalDncCount} />
+          <Stat label="Blocked by buyers" value={job.blockedCount} />
         </div>
       )}
 

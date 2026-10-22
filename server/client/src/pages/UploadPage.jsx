@@ -75,7 +75,7 @@ export default function UploadPage() {
 
       {uploadRequirements && (
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-          <p className="font-medium text-slate-700">Your file needs a phone column, e.g.:</p>
+          <p className="font-medium text-slate-700">Your file needs a column of US phone numbers. Common headers:</p>
           <p className="mt-1 font-mono text-xs text-slate-500">
             {uploadRequirements.acceptedPhoneHeaders.join(", ")}
           </p>
@@ -84,7 +84,7 @@ export default function UploadPage() {
             {uploadRequirements.acceptedStateHeaders.join(", ")}
           </p>
           <p className="mt-2">
-            Column headers are matched automatically regardless of case or spacing (e.g. "Phone
+            If none of these headers match, we automatically find the phone column by looking at the values. If no phone numbers are found, you'll get a "Phone number not found" error. Column headers are matched regardless of case or spacing (e.g. "Phone
             Number", "phone_number", and "PHONENUMBER" all work the same). Any US phone format is
             accepted (with or without dashes, parentheses, or a leading 1). States can be entered as
             a 2-letter code or a full name, in any case — "AZ", "az", and "Arizona" all work. If a

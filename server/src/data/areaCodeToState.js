@@ -6,8 +6,8 @@
 //
 // Sourced from a public area-code geolocation dataset and cross-checked
 // against current per-state area code lists, with extra care for this
-// app's five target states (TX, OH, AZ, IN, MO) to ensure they're complete
-// as of 2026, including newer overlay codes (e.g. TX 945, OH 283/326/380/
+// app's priority states (TX, FL, NC, SC, TN, OH, MI, LA, IN, AZ, OK, MO, AL,
+// MS, KS, IA) to ensure they're complete as of 2026, including newer overlay codes (e.g. TX 945, OH 283/326/380/
 // 436, IN 463/930, MO 235/557/975). Toll-free (800/888/877/...) and other
 // non-geographic codes are intentionally absent - there's no state to
 // derive for those, so lookup correctly returns null for them.
