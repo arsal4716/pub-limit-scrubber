@@ -10,12 +10,12 @@ function formatMinutes(seconds) {
   return minutes === 1 ? "about 1 minute" : `about ${minutes} minutes`;
 }
 
-export default function JobStatusCard({ jobId }) {
+export default function JobStatusCard({ jobId, admin = false }) {
   const [downloadError, setDownloadError] = useState(null);
 
   const { data: job, error } = useQuery({
-    queryKey: ["job-status", jobId],
-    queryFn: () => fetchJobStatus(jobId),
+    queryKey: ["job-status", jobId, admin],
+    queryFn: () => fetchJobStatus(jobId, admin),
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       return status === "completed" || status === "failed" ? false : 2500;
@@ -25,7 +25,7 @@ export default function JobStatusCard({ jobId }) {
   async function handleDownload() {
     setDownloadError(null);
     try {
-      const blob = await downloadScrubOutput(jobId);
+      const blob = await downloadScrubOutput(jobId, admin);
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -59,6 +59,7 @@ export default function JobStatusCard({ jobId }) {
       <div className="flex items-center justify-between">
         <div>
           <p className="font-medium text-slate-800">{job.originalFilename}</p>
+          {admin && <p className="text-xs text-slate-500">Publisher: {job.publisherName}</p>}
           <p className="text-xs text-slate-400">Job ID: {job.id}</p>
         </div>
         <StatusBadge status={job.status} />
@@ -126,7 +127,7 @@ export default function JobStatusCard({ jobId }) {
         </div>
       )}
 
-      {job.status === "processing" && (
+      {job.status === "processing" && !admin && (
         <p className="text-sm text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg p-3">
           You can leave this tab — {hasEta ? `come back in ${etaText}` : "check back shortly"} and
           your file will be ready to download here (or from the link you can bookmark now:{" "}

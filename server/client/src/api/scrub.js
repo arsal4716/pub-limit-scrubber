@@ -1,4 +1,5 @@
 import publisherClient from "./publisherClient";
+import adminClient from "./client";
 
 export async function fetchUploadRequirements() {
   const { data } = await publisherClient.get("/scrub/upload-requirements");
@@ -14,13 +15,16 @@ export async function uploadScrubFile(file) {
   return data;
 }
 
-export async function fetchJobStatus(jobId) {
-  const { data } = await publisherClient.get(`/scrub/status/${jobId}`);
+// `admin` selects the admin session's token instead of a publisher's, so
+// the admin dashboard can view any job's live status without logging in
+// as that publisher (the server accepts either token on these routes).
+export async function fetchJobStatus(jobId, admin = false) {
+  const { data } = await (admin ? adminClient : publisherClient).get(`/scrub/status/${jobId}`);
   return data;
 }
 
-export async function downloadScrubOutput(jobId) {
-  const response = await publisherClient.get(`/scrub/download/${jobId}`, { responseType: "blob" });
+export async function downloadScrubOutput(jobId, admin = false) {
+  const response = await (admin ? adminClient : publisherClient).get(`/scrub/download/${jobId}`, { responseType: "blob" });
   return response.data;
 }
 
