@@ -75,6 +75,17 @@ export default function JobStatusCard({ jobId }) {
         </p>
       )}
 
+      {job.status === "checking" && (
+        <div className="space-y-2">
+          <div className="flex justify-between text-sm text-slate-600">
+            <span>
+              Checking duplicates: {job.dncCheckedCount || 0} / {job.uniquePhoneCount || 0}
+            </span>
+          </div>
+          <ProgressBar value={job.dncCheckedCount || 0} max={job.uniquePhoneCount || 1} />
+        </div>
+      )}
+
       {(job.status === "processing" || job.status === "completed") && (
         <div className="space-y-2">
           <div className="flex justify-between text-sm text-slate-600">

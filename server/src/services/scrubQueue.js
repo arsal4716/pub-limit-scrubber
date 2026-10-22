@@ -96,7 +96,15 @@ async function runJob(jobId) {
   // check - not rate-limited, run as fast as the service allows. Anything
   // it flags as a duplicate is marked DNC right here and never reaches
   // either buyer; only the rest proceed to the buyer split below.
-  const dncResults = await checkPhonesForDnc(analysis.uniquePhonesOrdered);
+  job.status = "checking";
+  await job.save();
+  let dncSaveChain = Promise.resolve();
+  const dncResults = await checkPhonesForDnc(analysis.uniquePhonesOrdered, undefined, (checked) => {
+    job.dncCheckedCount = checked;
+    dncSaveChain = dncSaveChain.then(() => job.save()).catch(() => {});
+    return dncSaveChain;
+  });
+  await dncSaveChain;
   const phoneResults = new Map();
   const phonesToProcess = [];
 
@@ -166,7 +174,7 @@ async function runJob(jobId) {
 // tradeoff for not needing to persist partial per-phone results.
 async function recoverInterruptedJobs() {
   const stuck = await ScrubJob.find({
-    status: { $in: ["queued", "analyzing", "processing"] },
+    status: { $in: ["queued", "analyzing", "checking", "processing"] },
   });
 
   for (const job of stuck) {
@@ -179,6 +187,7 @@ async function recoverInterruptedJobs() {
     job.apiErrorCount = 0;
     job.skippedOverLimitCount = 0;
     job.internalDncCount = 0;
+    job.dncCheckedCount = 0;
     job.buyerStats = {
       buyer1: { blockedCount: 0, availableCount: 0, errorCount: 0, notCheckedCount: 0 },
       buyer2: { blockedCount: 0, availableCount: 0, errorCount: 0, notCheckedCount: 0 },
