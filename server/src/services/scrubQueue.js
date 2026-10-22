@@ -87,7 +87,15 @@ async function runJob(jobId) {
   await job.save();
 
   const delimiter = await detectDelimiter(job.inputPath);
-  const analysis = await analyzeFile(job.inputPath, delimiter);
+  let analyzeSaveChain = Promise.resolve();
+  const analysis = await analyzeFile(job.inputPath, delimiter, (p) => {
+    job.totalRows = p.totalRows;
+    job.uniquePhoneCount = p.uniqueCount;
+    job.duplicateInFileCount = p.duplicateInFileCount;
+    job.invalidPhoneCount = p.invalidPhoneCount;
+    analyzeSaveChain = analyzeSaveChain.then(() => job.save()).catch(() => {});
+  });
+  await analyzeSaveChain;
 
   job.totalRows = analysis.totalRows;
   job.invalidPhoneCount = analysis.invalidPhoneCount;
@@ -101,8 +109,9 @@ async function runJob(jobId) {
   job.status = "checking";
   await job.save();
   let dncSaveChain = Promise.resolve();
-  const dncResults = await checkPhonesForDnc(analysis.uniquePhonesOrdered, undefined, (checked) => {
+  const dncResults = await checkPhonesForDnc(analysis.uniquePhonesOrdered, undefined, (checked, duplicates) => {
     job.dncCheckedCount = checked;
+    job.internalDncCount = duplicates;
     dncSaveChain = dncSaveChain.then(() => job.save()).catch(() => {});
     return dncSaveChain;
   });

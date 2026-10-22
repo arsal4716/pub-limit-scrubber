@@ -33,7 +33,7 @@ async function checkOne(phone) {
 // caps how many requests are in flight at once. Returns a Map of
 // normalizedPhone -> { isDuplicate, message }.
 //
-// `onProgress(checkedSoFar)` fires after each batch. If the service is
+// `onProgress(checkedSoFar, duplicatesSoFar)` fires after each batch. If the service is
 // down, every request waits out its timeout, which on a big file would
 // stall the job for hours - so after MAX_FAILED_BATCHES consecutive
 // batches where every request failed, the DNC pass is abandoned (fail
@@ -43,17 +43,19 @@ const MAX_FAILED_BATCHES = 3;
 async function checkPhonesForDnc(phones, concurrency = env.internalDncConcurrency, onProgress) {
   const results = new Map();
   let failedBatches = 0;
+  let duplicates = 0;
 
   for (let i = 0; i < phones.length; i += concurrency) {
     const batch = phones.slice(i, i + concurrency);
     const batchResults = await Promise.all(batch.map(checkOne));
     batch.forEach((phone, idx) => results.set(phone, batchResults[idx]));
-    if (onProgress) await onProgress(Math.min(i + concurrency, phones.length));
+    duplicates += batchResults.filter((r) => r.isDuplicate).length;
+    if (onProgress) await onProgress(Math.min(i + concurrency, phones.length), duplicates);
 
     failedBatches = batchResults.every((r) => r.failed) ? failedBatches + 1 : 0;
     if (failedBatches >= MAX_FAILED_BATCHES) {
       console.error("[internalDncClient] service unreachable; skipping internal DNC check for the rest of the file");
-      if (onProgress) await onProgress(phones.length);
+      if (onProgress) await onProgress(phones.length, duplicates);
       break;
     }
   }

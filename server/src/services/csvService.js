@@ -21,6 +21,8 @@ const { BUYER_SLOT_LABEL } = require("../constants/buyers");
 // The phone column is auto-detected (see phoneUtils.detectPhoneColumn) from
 // the first rows, so rows are buffered only until the sample fills.
 // Rejects with a PhoneColumnNotFoundError if no phone column exists.
+const ANALYZE_PROGRESS_EVERY = 50000;
+
 class PhoneColumnNotFoundError extends Error {
   constructor() {
     super(
@@ -31,7 +33,7 @@ class PhoneColumnNotFoundError extends Error {
   }
 }
 
-function analyzeFile(inputPath, delimiter = ",") {
+function analyzeFile(inputPath, delimiter = ",", onProgress) {
   return new Promise((resolve, reject) => {
     let totalRows = 0;
     let invalidPhoneCount = 0;
@@ -86,6 +88,9 @@ function analyzeFile(inputPath, delimiter = ",") {
           return;
         }
         handleRow(row);
+        if (onProgress && totalRows % ANALYZE_PROGRESS_EVERY === 0) {
+          onProgress({ totalRows, uniqueCount: uniquePhonesOrdered.length, duplicateInFileCount, invalidPhoneCount });
+        }
       })
       .on("end", () => {
         if (phoneColumn === undefined && !decideColumn()) return;

@@ -77,6 +77,8 @@ export default function JobStatusCard({ jobId }) {
       {job.status === "analyzing" && (
         <p className="text-sm text-slate-500">
           Reading your file, detecting the phone number column, and finding unique leads...
+          {job.totalRows > 0 &&
+            ` ${job.totalRows.toLocaleString()} rows read so far, ${(job.uniquePhoneCount || 0).toLocaleString()} unique leads, ${(job.duplicateInFileCount || 0).toLocaleString()} duplicates in file.`}
         </p>
       )}
 
@@ -87,6 +89,8 @@ export default function JobStatusCard({ jobId }) {
             <Stat label="Unique leads found" value={job.uniquePhoneCount} />
             <Stat label="Invalid / no phone" value={job.invalidPhoneCount} />
             <Stat label="Duplicates in file" value={job.duplicateInFileCount} />
+            <Stat label="Duplicates found in DNC so far" value={job.internalDncCount} />
+            <Stat label="Remaining to check" value={Math.max(0, (job.uniquePhoneCount || 0) - (job.dncCheckedCount || 0))} />
           </div>
           <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-lg p-3">
             Checking in internal DNC database: {(job.dncCheckedCount || 0).toLocaleString()} /{" "}
@@ -111,10 +115,14 @@ export default function JobStatusCard({ jobId }) {
 
       {job.status === "processing" && (
         <div className="grid grid-cols-2 gap-3 text-sm text-slate-600 sm:grid-cols-4">
+          <Stat label="Scrubbed so far" value={job.processedCount} />
+          <Stat label="Remaining" value={Math.max(0, (job.allowedCount || 0) - (job.processedCount || 0))} />
+          <Stat label="Duplicates found so far" value={(job.internalDncCount || 0) + (job.blockedCount || 0) + (job.duplicateInFileCount || 0)} />
+          <Stat label="Accepted so far" value={job.acceptedCount} />
           <Stat label="Leads uploaded" value={job.totalRows} />
           <Stat label="Unique leads found" value={job.uniquePhoneCount} />
-          <Stat label="Found in internal DNC" value={job.internalDncCount} />
-          <Stat label="Pending buyer scrub" value={Math.max(0, (job.allowedCount || 0) - (job.processedCount || 0))} />
+          <Stat label="Duplicate in internal DNC" value={job.internalDncCount} />
+          <Stat label="Blocked by buyers" value={job.blockedCount} />
         </div>
       )}
 
