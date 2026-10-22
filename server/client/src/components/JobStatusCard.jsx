@@ -88,7 +88,8 @@ export default function JobStatusCard({ jobId, admin = false }) {
           <div className="grid grid-cols-2 gap-3 text-sm text-slate-600 sm:grid-cols-4">
             <Stat label="Leads uploaded" value={job.totalRows} />
             <Stat label="Unique leads found" value={job.uniquePhoneCount} />
-            <Stat label="Invalid / no phone" value={job.invalidPhoneCount} />
+            <Stat label="Blank phone" value={job.blankPhoneCount} />
+            <Stat label="Invalid phone format" value={job.invalidPhoneCount} />
             <Stat label="Duplicates in file" value={job.duplicateInFileCount} />
             <Stat label="Duplicates found in DNC so far" value={job.internalDncCount} />
             <Stat label="Remaining to check" value={Math.max(0, (job.uniquePhoneCount || 0) - (job.dncCheckedCount || 0))} />
@@ -145,7 +146,8 @@ export default function JobStatusCard({ jobId, admin = false }) {
             <Stat label="Skipped (limit)" value={job.skippedOverLimitCount} />
             <Stat label="Accepted" value={job.acceptedCount} />
             <Stat label="Blocked/duplicate" value={job.blockedCount} />
-            <Stat label="Invalid phone" value={job.invalidPhoneCount} />
+            <Stat label="Blank phone" value={job.blankPhoneCount} />
+            <Stat label="Invalid phone format" value={job.invalidPhoneCount} />
             <Stat label="Dupes in file" value={job.duplicateInFileCount} />
             <Stat label="Buyer 1 blocked" value={job.buyerStats?.buyer1?.blockedCount} />
             <Stat label="Buyer 2 blocked" value={job.buyerStats?.buyer2?.blockedCount} />

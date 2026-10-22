@@ -93,12 +93,14 @@ async function runJob(jobId) {
     job.uniquePhoneCount = p.uniqueCount;
     job.duplicateInFileCount = p.duplicateInFileCount;
     job.invalidPhoneCount = p.invalidPhoneCount;
+    job.blankPhoneCount = p.blankPhoneCount;
     analyzeSaveChain = analyzeSaveChain.then(() => job.save()).catch(() => {});
   });
   await analyzeSaveChain;
 
   job.totalRows = analysis.totalRows;
   job.invalidPhoneCount = analysis.invalidPhoneCount;
+  job.blankPhoneCount = analysis.blankPhoneCount;
   job.duplicateInFileCount = analysis.duplicateInFileCount;
   job.uniquePhoneCount = analysis.uniquePhonesOrdered.length;
 
