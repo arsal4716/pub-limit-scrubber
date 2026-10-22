@@ -25,7 +25,8 @@ const scrubJobSchema = new mongoose.Schema(
     dateKey: { type: String, required: true, index: true }, // day the job was created (reset timezone)
 
     totalRows: { type: Number, default: 0 },
-    invalidPhoneCount: { type: Number, default: 0 },
+    invalidPhoneCount: { type: Number, default: 0 }, // phone present but not a valid US number
+    blankPhoneCount: { type: Number, default: 0 }, // phone cell empty
     duplicateInFileCount: { type: Number, default: 0 },
     uniquePhoneCount: { type: Number, default: 0 },
 

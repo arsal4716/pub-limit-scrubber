@@ -3,6 +3,7 @@ const path = require("path");
 const ScrubJob = require("../models/ScrubJob");
 const { enqueueJob, pendingPhoneCountAhead } = require("../services/scrubQueue");
 const { leadsPerMinuteRate } = require("../services/buyerApiClient");
+const { getPublisherUsageSnapshot } = require("../services/buyerLimitService");
 const { todayKey } = require("../utils/dateKey");
 const { PHONE_HEADER_CANDIDATES, STATE_HEADER_CANDIDATES } = require("../services/phoneUtils");
 
@@ -15,6 +16,7 @@ function jobToStatusDto(job) {
     errorMessage: job.errorMessage,
     totalRows: job.totalRows,
     invalidPhoneCount: job.invalidPhoneCount,
+    blankPhoneCount: job.blankPhoneCount,
     duplicateInFileCount: job.duplicateInFileCount,
     uniquePhoneCount: job.uniquePhoneCount,
     internalDncCount: job.internalDncCount,
@@ -47,6 +49,19 @@ async function uploadFile(req, res) {
   // any logged-in publisher could upload (and later download) files under
   // another publisher's name just by knowing it.
   const publisher = req.publisher;
+
+  // Refuse up front when there's no quota to scrub with, instead of
+  // running the whole file only to mark every lead "Not Checked".
+  const usage = await getPublisherUsageSnapshot(publisher._id);
+  if (usage.dailyLimit <= 0 || usage.remainingToday <= 0) {
+    fs.unlink(req.file.path, () => {});
+    return res.status(403).json({
+      error:
+        usage.dailyLimit <= 0
+          ? "Your daily scrub limit is 0, so no leads can be scrubbed. Please contact an admin to have your limit set."
+          : "You've used your entire daily scrub limit for today. Please try again tomorrow or contact an admin to raise it.",
+    });
+  }
 
   const job = await ScrubJob.create({
     publisherId: publisher._id,

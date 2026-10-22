@@ -37,6 +37,7 @@ function analyzeFile(inputPath, delimiter = ",", onProgress) {
   return new Promise((resolve, reject) => {
     let totalRows = 0;
     let invalidPhoneCount = 0;
+    let blankPhoneCount = 0;
     let duplicateInFileCount = 0;
     const seen = new Set();
     const uniquePhonesOrdered = [];
@@ -46,10 +47,12 @@ function analyzeFile(inputPath, delimiter = ",", onProgress) {
 
     const handleRow = (row) => {
         totalRows++;
-        const normalized = normalizePhone(extractPhoneFromRow(row, phoneColumn));
+        const rawPhone = extractPhoneFromRow(row, phoneColumn);
+        const normalized = normalizePhone(rawPhone);
 
         if (!normalized) {
-          invalidPhoneCount++;
+          if (rawPhone === null) blankPhoneCount++;
+          else invalidPhoneCount++;
           return;
         }
         if (seen.has(normalized)) {
@@ -89,7 +92,7 @@ function analyzeFile(inputPath, delimiter = ",", onProgress) {
         }
         handleRow(row);
         if (onProgress && totalRows % ANALYZE_PROGRESS_EVERY === 0) {
-          onProgress({ totalRows, uniqueCount: uniquePhonesOrdered.length, duplicateInFileCount, invalidPhoneCount });
+          onProgress({ totalRows, uniqueCount: uniquePhonesOrdered.length, duplicateInFileCount, invalidPhoneCount, blankPhoneCount });
         }
       })
       .on("end", () => {
@@ -97,7 +100,7 @@ function analyzeFile(inputPath, delimiter = ",", onProgress) {
         if (uniquePhonesOrdered.length === 0) {
           return reject(new PhoneColumnNotFoundError());
         }
-        resolve({ totalRows, invalidPhoneCount, duplicateInFileCount, uniquePhonesOrdered, phoneStates, phoneColumn });
+        resolve({ totalRows, invalidPhoneCount, blankPhoneCount, duplicateInFileCount, uniquePhonesOrdered, phoneStates, phoneColumn });
       });
   });
 }
@@ -137,7 +140,8 @@ function writeOutputFile(inputPath, outputPath, { phoneResults, delimiter = ",",
         fail(err);
       })
       .on("data", (row) => {
-        const normalized = normalizePhone(extractPhoneFromRow(row, phoneColumn));
+        const rawPhone = extractPhoneFromRow(row, phoneColumn);
+        const normalized = normalizePhone(rawPhone);
 
         let scrubStatus;
         // Each phone is routed to exactly one buyer, so there's a single
@@ -147,7 +151,7 @@ function writeOutputFile(inputPath, outputPath, { phoneResults, delimiter = ",",
         let result = { slot: "", status: "", message: "" };
 
         if (!normalized) {
-          scrubStatus = "Invalid Phone";
+          scrubStatus = rawPhone === null ? "Blank Phone" : "Invalid Phone";
         } else {
           const isRepeat = seenInPass2.has(normalized);
           seenInPass2.add(normalized);

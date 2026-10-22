@@ -169,6 +169,7 @@ export default function PublisherTable() {
         )}
       </div>
 
+      <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
           <tr>
@@ -347,6 +348,7 @@ export default function PublisherTable() {
           )}
         </tbody>
       </table>
+      </div>
       {updateMutation.isError && (
         <p className="px-5 pb-4 text-sm text-red-600">
           {updateMutation.error?.response?.data?.error || "Failed to update publisher."}
