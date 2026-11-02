@@ -18,4 +18,29 @@ function todayKey(date = new Date()) {
   return `${map.year}-${map.month}-${map.day}`;
 }
 
-module.exports = { todayKey };
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+// Calendar date, weekday ("Mon"...) and hour/minute of `date` as observed
+// in an arbitrary IANA timezone.
+function zoneParts(timeZone, date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const map = {};
+  for (const part of parts) map[part.type] = part.value;
+  return {
+    dateKey: `${map.year}-${map.month}-${map.day}`,
+    weekday: map.weekday,
+    hour: Number(map.hour),
+    minute: Number(map.minute),
+  };
+}
+
+module.exports = { todayKey, zoneParts, WEEKDAYS };

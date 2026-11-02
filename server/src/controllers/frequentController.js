@@ -1,14 +1,16 @@
 const fs = require("fs");
 const path = require("path");
 const FrequentRun = require("../models/FrequentRun");
-const { startRun } = require("../services/frequentService");
-const { todayKey } = require("../utils/dateKey");
+const env = require("../config/env");
+const { startRun, nextScheduledRun } = require("../services/frequentService");
+const { zoneParts } = require("../utils/dateKey");
 
 function toDto(run) {
   return {
     id: run._id,
     originalFilename: run.originalFilename,
     runDate: run.runDate,
+    source: run.source,
     status: run.status,
     errorMessage: run.errorMessage,
     isBaseline: run.isBaseline,
@@ -30,7 +32,7 @@ async function uploadRun(req, res) {
 
   const run = await FrequentRun.create({
     originalFilename: req.file.originalname,
-    runDate: todayKey(),
+    runDate: zoneParts(env.frequentTimezone).dateKey,
     inputPath: req.file.path,
     status: "processing",
   });
@@ -40,7 +42,15 @@ async function uploadRun(req, res) {
 
 async function listRuns(req, res) {
   const runs = await FrequentRun.find().sort({ createdAt: -1 }).limit(30);
-  res.json({ runs: runs.map(toDto) });
+  res.json({
+    runs: runs.map(toDto),
+    schedule: {
+      timezone: env.frequentTimezone,
+      hour: env.frequentRunHour,
+      inboxDir: env.frequentInboxDir,
+      nextRunAt: nextScheduledRun(),
+    },
+  });
 }
 
 async function downloadRun(req, res) {

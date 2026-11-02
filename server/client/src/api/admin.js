@@ -45,7 +45,7 @@ export async function deleteAdminJob(id) {
 
 export async function fetchFrequentRuns() {
   const { data } = await client.get("/admin/frequent/runs");
-  return data.runs;
+  return data;
 }
 
 export async function uploadFrequentFile(file) {

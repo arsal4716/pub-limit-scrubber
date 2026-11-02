@@ -6,6 +6,9 @@ const FrequentRun = require("../models/FrequentRun");
 const { analyzeFile } = require("./csvService");
 const { normalizePhone, extractPhoneFromRow } = require("./phoneUtils");
 const { detectDelimiter } = require("../utils/csvDelimiter");
+const env = require("../config/env");
+const { zoneParts } = require("../utils/dateKey");
+const { UPLOADS_ROOT } = require("../middleware/upload");
 
 async function loadPhoneSet(phonesPath) {
   const set = new Set();
@@ -157,4 +160,85 @@ async function failInterruptedRuns() {
   );
 }
 
-module.exports = { startRun, failInterruptedRuns };
+// ---- Weekly schedule -------------------------------------------------
+// Every Monday from FREQUENT_RUN_HOUR (in FREQUENT_TIMEZONE) the newest CSV
+// in the inbox folder is picked up and run exactly like a manual upload,
+// producing both files. Checked once a minute rather than via a fixed cron
+// instant, so a server that was down at 7:00 still runs later that Monday,
+// and a file dropped in after 7:00 is still picked up the same day.
+let noFileLoggedFor = null;
+
+function newestInboxCsv() {
+  if (!fs.existsSync(env.frequentInboxDir)) return null;
+  const files = fs
+    .readdirSync(env.frequentInboxDir, { withFileTypes: true })
+    .filter((d) => d.isFile() && path.extname(d.name).toLowerCase() === ".csv")
+    .map((d) => {
+      const full = path.join(env.frequentInboxDir, d.name);
+      return { name: d.name, full, mtime: fs.statSync(full).mtimeMs };
+    })
+    // Ignore leftovers from earlier weeks so a stale file is never rerun.
+    .filter((f) => Date.now() - f.mtime < 8 * 24 * 60 * 60 * 1000)
+    .sort((a, b) => b.mtime - a.mtime);
+  return files[0] || null;
+}
+
+async function runScheduledIfDue(now = new Date()) {
+  const zone = zoneParts(env.frequentTimezone, now);
+  if (zone.weekday !== "Mon" || zone.hour < env.frequentRunHour) return null;
+
+  const alreadyRan = await FrequentRun.exists({ source: "scheduled", runDate: zone.dateKey });
+  if (alreadyRan) return null;
+
+  const file = newestInboxCsv();
+  if (!file) {
+    if (noFileLoggedFor !== zone.dateKey) {
+      noFileLoggedFor = zone.dateKey;
+      console.warn(`[frequent] Monday run due but no .csv found in ${env.frequentInboxDir}; will keep checking today`);
+    }
+    return null;
+  }
+
+  // Keep a copy in its own folder (like uploads) and move the original to
+  // processed/ so it's never picked up twice.
+  const dir = path.join(UPLOADS_ROOT, require("crypto").randomUUID());
+  fs.mkdirSync(dir, { recursive: true });
+  const inputPath = path.join(dir, "input.csv");
+  fs.copyFileSync(file.full, inputPath);
+  const processedDir = path.join(env.frequentInboxDir, "processed");
+  fs.mkdirSync(processedDir, { recursive: true });
+  fs.renameSync(file.full, path.join(processedDir, `${zone.dateKey}_${file.name}`));
+
+  const run = await FrequentRun.create({
+    originalFilename: file.name,
+    runDate: zone.dateKey,
+    source: "scheduled",
+    inputPath,
+    status: "processing",
+  });
+  console.log(`[frequent] scheduled Monday run started for ${zone.dateKey} using ${file.name}`);
+  startRun(String(run._id));
+  return run;
+}
+
+function startFrequentScheduler() {
+  const tick = () =>
+    runScheduledIfDue().catch((err) => console.error("[frequent] scheduler error:", err));
+  tick();
+  return setInterval(tick, 60 * 1000);
+}
+
+// Next scheduled run instant (ISO), for display. Steps in 15-minute slots.
+function nextScheduledRun(now = new Date()) {
+  const step = 15 * 60 * 1000;
+  let t = Math.ceil(now.getTime() / step) * step;
+  for (let i = 0; i < 8 * 24 * 4; i++, t += step) {
+    const z = zoneParts(env.frequentTimezone, new Date(t));
+    if (z.weekday === "Mon" && z.hour === env.frequentRunHour && z.minute === 0) {
+      return new Date(t).toISOString();
+    }
+  }
+  return null;
+}
+
+module.exports = { startRun, failInterruptedRuns, startFrequentScheduler, runScheduledIfDue, nextScheduledRun };

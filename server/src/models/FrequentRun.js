@@ -9,6 +9,7 @@ const frequentRunSchema = new mongoose.Schema(
   {
     originalFilename: { type: String, required: true },
     runDate: { type: String, required: true, index: true }, // YYYY-MM-DD in the reset timezone
+    source: { type: String, enum: ["upload", "scheduled"], default: "upload" },
     inputPath: { type: String, required: true },
     phonesPath: { type: String, default: null },
     shopperPath: { type: String, default: null }, // Frequent_Shopper output (all unique numbers)

@@ -23,12 +23,14 @@ export default function FrequentRunsPanel() {
   const [file, setFile] = useState(null);
   const [downloadError, setDownloadError] = useState(null);
 
-  const { data: runs = [] } = useQuery({
+  const { data } = useQuery({
     queryKey: ["frequent-runs"],
     queryFn: fetchFrequentRuns,
     refetchInterval: (query) =>
-      query.state.data?.some((r) => r.status === "processing") ? 3000 : false,
+      query.state.data?.runs?.some((r) => r.status === "processing") ? 3000 : false,
   });
+  const runs = data?.runs || [];
+  const schedule = data?.schedule;
 
   const uploadMutation = useMutation({
     mutationFn: () => uploadFrequentFile(file),
@@ -60,22 +62,32 @@ export default function FrequentRunsPanel() {
     }
   }
 
-  const isMonday = new Date().getDay() === 1;
+  const fmt = (iso, timeZone) =>
+    new Date(iso).toLocaleString("en-US", {
+      timeZone,
+      weekday: "long",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZoneName: "short",
+    });
 
   return (
     <div className="space-y-6">
       <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-3">
         <h2 className="text-sm font-medium text-slate-500">Weekly Frequent Shopper &rarr; Frequent SMS</h2>
         <p className="text-sm text-slate-600">
-          Upload this Monday's Frequent_Shopper file. It's compared with the previous upload, and
+          Or upload a Frequent_Shopper file yourself. It is compared with the previous upload, and
           you get two files: <strong>Frequent_Shopper</strong> (all unique numbers) and{" "}
           <strong>Frequent_SMS</strong> (only numbers that were not in the previous Frequent_Shopper
           file). The very first upload just becomes the baseline, so its SMS file is empty.
         </p>
-        {!isMonday && (
-          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-2">
-            Heads up: today isn't Monday. Uploading now still compares against your latest previous
-            upload.
+        {schedule?.nextRunAt && (
+          <p className="text-sm text-indigo-800 bg-indigo-50 border border-indigo-100 rounded-lg p-3">
+            <strong>Runs automatically every Monday.</strong> Next run:{" "}
+            {fmt(schedule.nextRunAt, schedule.timezone)} (that's{" "}
+            {fmt(schedule.nextRunAt, "America/New_York")}). It uses the newest .csv in the server
+            folder <code className="text-xs">{schedule.inboxDir}</code>. You can also upload a file
+            manually below at any time.
           </p>
         )}
         <form
@@ -126,6 +138,9 @@ export default function FrequentRunsPanel() {
               <tr key={run.id}>
                 <td className="px-4 py-2.5 text-slate-700 whitespace-nowrap">
                   {run.runDate}
+                  {run.source === "scheduled" && (
+                    <span className="block text-xs text-slate-400">auto</span>
+                  )}
                   {run.previousRunDate && (
                     <span className="block text-xs text-slate-400">vs {run.previousRunDate}</span>
                   )}
