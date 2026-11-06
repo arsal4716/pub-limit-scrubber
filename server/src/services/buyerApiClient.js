@@ -183,4 +183,4 @@ function leadsPerMinuteRate(rateLimitEnabled = true, ratePerMinute = 1000) {
   return 2 * ratePerMinute;
 }
 
-module.exports = { processPhonesSplit, leadsPerMinuteRate };
+module.exports = { processPhonesSplit, leadsPerMinuteRate, pingLM, pingHC };
