@@ -80,6 +80,15 @@ module.exports = {
   // and network allow rather than at a fixed pace.
   fastModeConcurrency: toInt(process.env.FAST_MODE_CONCURRENCY, 200),
 
+  // Weekly Frequent_Shopper -> Frequent_SMS run. Schedules and the run's
+  // date label use THIS timezone (Pakistan by default), deliberately not
+  // limitResetTimezone: 7:00 AM Monday in Pakistan is still Sunday night in
+  // New York, and the run must count as Monday. The newest CSV dropped into
+  // frequentInboxDir is picked up automatically at that time.
+  frequentTimezone: process.env.FREQUENT_TIMEZONE || "Asia/Karachi",
+  frequentRunHour: toInt(process.env.FREQUENT_RUN_HOUR, 7),
+  frequentInboxDir: process.env.FREQUENT_INBOX_DIR || path.join(__dirname, "..", "..", "frequent-inbox"),
+
   // Seed value for the global capacity ceiling (applied on first boot
   // only, then only editable from the admin dashboard).
   defaultTotalDailyLimit: toInt(process.env.DEFAULT_TOTAL_DAILY_LIMIT, 1000000),

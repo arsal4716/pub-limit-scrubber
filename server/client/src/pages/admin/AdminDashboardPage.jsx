@@ -2,12 +2,14 @@ import { useState } from "react";
 import GlobalLimitCard from "../../components/admin/GlobalLimitCard.jsx";
 import RateLimitToggleCard from "../../components/admin/RateLimitToggleCard.jsx";
 import PublisherTable from "../../components/admin/PublisherTable.jsx";
+import FrequentRunsPanel from "../../components/admin/FrequentRunsPanel.jsx";
 import JobsTable from "../../components/admin/JobsTable.jsx";
 
 const TABS = [
   { key: "overview", label: "Overview" },
   { key: "publishers", label: "Publishers" },
   { key: "jobs", label: "Jobs & stats" },
+  { key: "frequent", label: "Weekly SMS" },
 ];
 
 export default function AdminDashboardPage() {
@@ -41,6 +43,7 @@ export default function AdminDashboardPage() {
       )}
       {tab === "publishers" && <PublisherTable />}
       {tab === "jobs" && <JobsTable />}
+      {tab === "frequent" && <FrequentRunsPanel />}
     </div>
   );
 }
