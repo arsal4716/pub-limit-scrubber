@@ -16,6 +16,11 @@ const globalConfigSchema = new mongoose.Schema(
     // Target requests/minute PER BUYER while rate limiting is on (default
     // 1000, matching the original fixed pace) - admin-editable in the
     // dashboard. Ignored when rateLimitEnabled is false.
+    // Which buyer APIs are used. Both on = file scrubs split the list
+    // between them (realtime checks both). Exactly one on = every number
+    // goes through that one buyer only. Defaults: HC only, LM off.
+    lmEnabled: { type: Boolean, default: false },
+    hcEnabled: { type: Boolean, default: true },
     rateLimitPerMinute: { type: Number, default: 1000, min: 1 },
   },
   { timestamps: true }

@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const Publisher = require("../models/Publisher");
 const ScrubJob = require("../models/ScrubJob");
-const { getOrCreateGlobalConfig, updateGlobalDailyLimit, updateRateLimitSettings } = require("../services/limitService");
+const { getOrCreateGlobalConfig, updateGlobalDailyLimit, updateRateLimitSettings, updateBuyerToggles } = require("../services/limitService");
 const {
   validateGlobalLimitChange,
   validatePublisherLimitChange,
@@ -26,6 +26,8 @@ async function getConfig(req, res) {
     activePublisherCount: snapshot.activePublisherCount,
     rateLimitEnabled: globalConfig.rateLimitEnabled,
     rateLimitPerMinute: globalConfig.rateLimitPerMinute,
+    lmEnabled: globalConfig.lmEnabled,
+    hcEnabled: globalConfig.hcEnabled,
     dateKey: todayKey(),
   });
 }
@@ -39,6 +41,26 @@ async function updateConfig(req, res) {
   await validateGlobalLimitChange(totalDailyLimit);
   const config = await updateGlobalDailyLimit(totalDailyLimit);
   res.json({ totalDailyLimit: config.totalDailyLimit });
+}
+
+async function updateBuyers(req, res) {
+  const { lmEnabled, hcEnabled } = req.body;
+  if (lmEnabled === undefined && hcEnabled === undefined) {
+    return res.status(400).json({ error: "lmEnabled and/or hcEnabled is required" });
+  }
+  for (const v of [lmEnabled, hcEnabled]) {
+    if (v !== undefined && typeof v !== "boolean") {
+      return res.status(400).json({ error: "lmEnabled and hcEnabled must be booleans" });
+    }
+  }
+  const current = await getOrCreateGlobalConfig();
+  const nextLm = lmEnabled !== undefined ? lmEnabled : current.lmEnabled;
+  const nextHc = hcEnabled !== undefined ? hcEnabled : current.hcEnabled;
+  if (!nextLm && !nextHc) {
+    return res.status(400).json({ error: "At least one buyer API must stay enabled" });
+  }
+  const config = await updateBuyerToggles({ lmEnabled, hcEnabled });
+  res.json({ lmEnabled: config.lmEnabled, hcEnabled: config.hcEnabled });
 }
 
 async function updateRateLimit(req, res) {
@@ -263,6 +285,7 @@ async function deleteJob(req, res) {
 }
 
 module.exports = {
+  updateBuyers,
   createApiKey,
   revokeApiKey,
   getConfig,

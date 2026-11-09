@@ -1,5 +1,6 @@
 import { useState } from "react";
 import GlobalLimitCard from "../../components/admin/GlobalLimitCard.jsx";
+import BuyerTogglesCard from "../../components/admin/BuyerTogglesCard.jsx";
 import RateLimitToggleCard from "../../components/admin/RateLimitToggleCard.jsx";
 import PublisherTable from "../../components/admin/PublisherTable.jsx";
 import FrequentRunsPanel from "../../components/admin/FrequentRunsPanel.jsx";
@@ -37,6 +38,7 @@ export default function AdminDashboardPage() {
 
       {tab === "overview" && (
         <div className="space-y-6">
+          <BuyerTogglesCard />
           <RateLimitToggleCard />
           <GlobalLimitCard />
         </div>

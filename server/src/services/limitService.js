@@ -30,4 +30,15 @@ async function updateRateLimitSettings({ enabled, ratePerMinute } = {}) {
   return GlobalConfig.findOneAndUpdate({ key: "global" }, update, { upsert: true, new: true });
 }
 
-module.exports = { getOrCreateGlobalConfig, updateGlobalDailyLimit, updateRateLimitSettings };
+async function updateBuyerToggles({ lmEnabled, hcEnabled } = {}) {
+  const update = {};
+  if (lmEnabled !== undefined) update.lmEnabled = lmEnabled;
+  if (hcEnabled !== undefined) update.hcEnabled = hcEnabled;
+  return GlobalConfig.findOneAndUpdate({ key: "global" }, update, { upsert: true, new: true });
+}
+
+function enabledBuyersFrom(config) {
+  return { LM: !!config.lmEnabled, HC: !!config.hcEnabled };
+}
+
+module.exports = { updateBuyerToggles, enabledBuyersFrom, getOrCreateGlobalConfig, updateGlobalDailyLimit, updateRateLimitSettings };

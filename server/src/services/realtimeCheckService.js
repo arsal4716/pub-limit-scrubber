@@ -2,6 +2,7 @@ const { normalizePhone, normalizeStateCode, deriveStateFromAreaCode } = require(
 const { checkPhonesForDnc } = require("./internalDncClient");
 const { reserveBuyerCall, getPublisherBuyerLimits } = require("./buyerLimitService");
 const { pingLM, pingHC } = require("./buyerApiClient");
+const { getOrCreateGlobalConfig, enabledBuyersFrom } = require("./limitService");
 
 // Realtime check of one number for a publisher. Order: internal DNC ->
 // buyer 1 -> (only if buyer 1 says available) buyer 2, so a number is
@@ -19,27 +20,34 @@ async function checkNumber(publisher, rawPhone, rawState) {
     return { phone, status: "dnc", reason: "Duplicate - internal DNC list", checkedBy: [] };
   }
 
-  const limits = getPublisherBuyerLimits(publisher.dailyLimit);
+  const enabled = enabledBuyersFrom(await getOrCreateGlobalConfig());
+  if (!enabled.LM && !enabled.HC) {
+    return { phone, status: "error", reason: "No buyer API is enabled", checkedBy: [] };
+  }
+  const limits = getPublisherBuyerLimits(publisher.dailyLimit, enabled);
+  const state = (rawState && normalizeStateCode(rawState)) || deriveStateFromAreaCode(phone);
   const checkedBy = [];
 
-  if (!(await reserveBuyerCall("LM", publisher._id, limits.LM))) {
-    return { phone, status: "limit_reached", reason: "Daily limit reached", checkedBy };
-  }
-  const lm = await pingLM(phone);
-  checkedBy.push("buyer1");
-  if (lm.status === "Blocked") return { phone, status: "blocked", reason: lm.message, checkedBy };
-  if (lm.status === "Error") return { phone, status: "error", reason: "Buyer 1 error", checkedBy };
+  // Buyers run in order (LM, then HC) but only the enabled ones; a number
+  // is blocked if any enabled buyer blocks it.
+  const steps = [];
+  if (enabled.LM) steps.push({ key: "LM", slot: "buyer1", ping: () => pingLM(phone) });
+  if (enabled.HC) steps.push({ key: "HC", slot: "buyer2", ping: () => pingHC(phone, state) });
 
-  const state = (rawState && normalizeStateCode(rawState)) || deriveStateFromAreaCode(phone);
-  if (!state) return { phone, status: "available", reason: "Caller Allowed", checkedBy };
-
-  if (!(await reserveBuyerCall("HC", publisher._id, limits.HC))) {
-    return { phone, status: "available", reason: "Caller Allowed (buyer 2 limit reached, not checked)", checkedBy };
+  for (const step of steps) {
+    if (step.key === "HC" && !state) {
+      if (checkedBy.length === 0) return { phone, status: "error", reason: "State could not be determined", checkedBy };
+      continue;
+    }
+    if (!(await reserveBuyerCall(step.key, publisher._id, limits[step.key]))) {
+      if (checkedBy.length === 0) return { phone, status: "limit_reached", reason: "Daily limit reached", checkedBy };
+      return { phone, status: "available", reason: "Caller Allowed (another buyer's limit reached, not checked)", checkedBy };
+    }
+    const result = await step.ping();
+    checkedBy.push(step.slot);
+    if (result.status === "Blocked") return { phone, status: "blocked", reason: result.message, checkedBy };
+    if (result.status === "Error") return { phone, status: "error", reason: `${step.slot === "buyer1" ? "Buyer 1" : "Buyer 2"} error`, checkedBy };
   }
-  const hc = await pingHC(phone, state);
-  checkedBy.push("buyer2");
-  if (hc.status === "Blocked") return { phone, status: "blocked", reason: hc.message, checkedBy };
-  if (hc.status === "Error") return { phone, status: "error", reason: "Buyer 2 error", checkedBy };
   return { phone, status: "available", reason: "Caller Allowed", checkedBy };
 }
 

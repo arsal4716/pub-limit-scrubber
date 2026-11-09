@@ -5,7 +5,7 @@ const { analyzeFile, writeOutputFile } = require("./csvService");
 const { processPhonesSplit, leadsPerMinuteRate } = require("./buyerApiClient");
 const { checkPhonesForDnc } = require("./internalDncClient");
 const { getPublisherBuyerLimits } = require("./buyerLimitService");
-const { getOrCreateGlobalConfig } = require("./limitService");
+const { getOrCreateGlobalConfig, enabledBuyersFrom } = require("./limitService");
 const { detectDelimiter } = require("../utils/csvDelimiter");
 
 function applyBuyerStat(stat, status) {
@@ -78,7 +78,13 @@ async function runJob(jobId) {
     Publisher.findById(job.publisherId),
     getOrCreateGlobalConfig(),
   ]);
-  const buyerLimits = getPublisherBuyerLimits(publisher ? publisher.dailyLimit : 0);
+  const enabledBuyers = enabledBuyersFrom(globalConfig);
+  if (!enabledBuyers.LM && !enabledBuyers.HC) {
+    const err = new Error("No buyer API is enabled right now. Please contact an admin.");
+    err.userFacing = true;
+    throw err;
+  }
+  const buyerLimits = getPublisherBuyerLimits(publisher ? publisher.dailyLimit : 0, enabledBuyers);
   const rateLimitEnabled = globalConfig.rateLimitEnabled;
   const ratePerMinute = globalConfig.rateLimitPerMinute;
 
@@ -140,7 +146,8 @@ async function runJob(jobId) {
   job.skippedOverLimitCount = 0;
   job.rateLimitEnabled = rateLimitEnabled;
   job.rateLimitPerMinute = ratePerMinute;
-  const rate = leadsPerMinuteRate(rateLimitEnabled, ratePerMinute);
+  job.activeBuyerCount = (enabledBuyers.LM ? 1 : 0) + (enabledBuyers.HC ? 1 : 0);
+  const rate = leadsPerMinuteRate(rateLimitEnabled, ratePerMinute, job.activeBuyerCount);
   job.estimatedSeconds = rate ? Math.ceil((job.allowedCount / rate) * 60) : 0;
   job.status = "processing";
   await job.save();
@@ -167,7 +174,8 @@ async function runJob(jobId) {
         job.processedCount = processedSoFar;
         saveChain = saveChain.then(() => job.save());
         return saveChain;
-      }
+      },
+      enabledBuyers
     );
   }
 
