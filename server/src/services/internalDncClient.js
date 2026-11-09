@@ -6,25 +6,37 @@ function formatPhoneForApi(normalizedPhone) {
   return `(${normalizedPhone.slice(0, 3)})${normalizedPhone.slice(3, 6)}-${normalizedPhone.slice(6)}`;
 }
 
+const MAX_ATTEMPTS = 3;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// One request, retried (with a short backoff) on timeouts/errors before
+// giving up, so a briefly overloaded DNC service doesn't let numbers slip
+// through to the buyers.
 async function checkOne(phone) {
-  try {
-    const response = await axios.post(
-      env.internalDncApiUrl,
-      { phone: formatPhoneForApi(phone) },
-      { timeout: env.internalDncApiTimeoutMs }
-    );
-    if (response.data?.success !== true) {
-      return { isDuplicate: false, message: null };
+  let lastError = null;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const response = await axios.post(
+        env.internalDncApiUrl,
+        { phone: formatPhoneForApi(phone) },
+        { timeout: env.internalDncApiTimeoutMs }
+      );
+      if (response.data?.success !== true) {
+        return { isDuplicate: false, message: null };
+      }
+      const status = response.data.status;
+      return { isDuplicate: status !== "Not Duplicate", message: status };
+    } catch (err) {
+      lastError = err.message;
+      if (attempt < MAX_ATTEMPTS) await sleep(500 * attempt);
     }
-    const status = response.data.status;
-    return { isDuplicate: status !== "Not Duplicate", message: status };
-  } catch (err) {
-    // Fail open: if our own dedupe service is unreachable or errors out,
-    // don't block the whole file over it - let the lead through to the
-    // buyer APIs instead of marking a real lead DNC over a network blip.
-    console.error("[internalDncClient] check-number request failed:", err.message);
-    return { isDuplicate: false, message: null, failed: true };
   }
+  // Fail open after all retries: if our own dedupe service is unreachable,
+  // don't block the whole file over it - the lead goes on to the buyers.
+  return { isDuplicate: false, message: null, failed: true, error: lastError };
 }
 
 // Runs every phone through our own duplicate/DNC check before either buyer
@@ -50,6 +62,13 @@ async function checkPhonesForDnc(phones, concurrency = env.internalDncConcurrenc
     const batchResults = await Promise.all(batch.map(checkOne));
     batch.forEach((phone, idx) => results.set(phone, batchResults[idx]));
     duplicates += batchResults.filter((r) => r.isDuplicate).length;
+    const failedInBatch = batchResults.filter((r) => r.failed);
+    if (failedInBatch.length > 0) {
+      // One line per batch instead of one per number.
+      console.error(
+        `[internalDncClient] ${failedInBatch.length}/${batch.length} checks failed after ${MAX_ATTEMPTS} attempts (${failedInBatch[0].error})`
+      );
+    }
     if (onProgress) await onProgress(Math.min(i + concurrency, phones.length), duplicates);
 
     failedBatches = batchResults.every((r) => r.failed) ? failedBatches + 1 : 0;
