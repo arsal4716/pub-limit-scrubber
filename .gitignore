@@ -6,7 +6,5 @@ build/
 *.log
 server/uploads/*
 !server/uploads/.gitkeep
-server/frequent-inbox/*
-!server/frequent-inbox/.gitkeep
 !server/uploads/.gitkeep
 .DS_Store

@@ -65,29 +65,3 @@ export async function deleteAdminJob(id) {
   const { data } = await client.delete(`/admin/jobs/${id}`);
   return data;
 }
-
-export async function fetchFrequentRuns() {
-  const { data } = await client.get("/admin/frequent/runs");
-  return data;
-}
-
-export async function uploadFrequentFile(file) {
-  const form = new FormData();
-  form.append("file", file);
-  const { data } = await client.post("/admin/frequent/upload", form, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
-  return data;
-}
-
-export async function downloadFrequentFile(id, kind) {
-  const response = await client.get(`/admin/frequent/runs/${id}/download/${kind}`, {
-    responseType: "blob",
-  });
-  return response.data;
-}
-
-export async function deleteFrequentRun(id) {
-  const { data } = await client.delete(`/admin/frequent/runs/${id}`);
-  return data;
-}
