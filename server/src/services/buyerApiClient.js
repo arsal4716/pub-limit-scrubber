@@ -2,6 +2,7 @@ const axios = require("axios");
 const env = require("../config/env");
 const { reserveBuyerCall } = require("./buyerLimitService");
 const { BUYER_SLOT } = require("../constants/buyers");
+const { getPortalStatus } = require("./operatingHours");
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -103,13 +104,30 @@ async function checkPhoneWithBuyer(buyerKey, phone, state, publisherId, dailyLim
 // back 429 (Too Many Requests), the loop pauses for a randomized 3-4s
 // before starting the next batch, regardless of mode - hammering an
 // already-rate-limited API is never useful.
-async function processPhonesForBuyer(buyerKey, phones, phoneStates, publisherId, dailyLimit, rateLimitEnabled, ratePerMinute, onResult, onProgress) {
+// Holds buyer calls while the portal is switched off or outside operating
+// hours; resumes on its own once open. `onPauseChange(true|false)` lets the
+// job record that it's paused so publishers can see why.
+const PAUSE_POLL_MS = 30 * 1000;
+async function waitUntilOpen(onPauseChange) {
+  let paused = false;
+  while (!(await getPortalStatus()).open) {
+    if (!paused) {
+      paused = true;
+      if (onPauseChange) await onPauseChange(true);
+    }
+    await sleep(PAUSE_POLL_MS);
+  }
+  if (paused && onPauseChange) await onPauseChange(false);
+}
+
+async function processPhonesForBuyer(buyerKey, phones, phoneStates, publisherId, dailyLimit, rateLimitEnabled, ratePerMinute, onResult, onProgress, onPauseChange) {
   const slot = BUYER_SLOT[buyerKey];
   const batchSize = rateLimitEnabled ? env.buyerApiConcurrency : env.fastModeConcurrency;
   const batchDelayMs = rateLimitEnabled ? (batchSize / ratePerMinute) * 60 * 1000 : 0;
   let processed = 0;
 
   for (let i = 0; i < phones.length; i += batchSize) {
+    await waitUntilOpen(onPauseChange);
     const batch = phones.slice(i, i + batchSize);
 
     const batchResults = await Promise.all(
@@ -148,7 +166,7 @@ async function processPhonesForBuyer(buyerKey, phones, phoneStates, publisherId,
 // exactly one buyer's result, since each phone is only ever routed to one.
 // `onBatchDone(processedSoFar, total)` fires after either loop makes
 // progress, so callers can persist combined progress for polling clients.
-async function processPhonesSplit(phones, phoneStates, publisherId, buyerLimits, rateLimitEnabled, ratePerMinute, onResult, onBatchDone, enabled = { LM: true, HC: true }) {
+async function processPhonesSplit(phones, phoneStates, publisherId, buyerLimits, rateLimitEnabled, ratePerMinute, onResult, onBatchDone, enabled = { LM: true, HC: true }, onPauseChange) {
   const total = phones.length;
   // Both buyers on: split the list in half. One buyer on: it gets every phone.
   const assignments = [];
@@ -173,7 +191,7 @@ async function processPhonesSplit(phones, phoneStates, publisherId, buyerLimits,
       processPhonesForBuyer(key, list, phoneStates, publisherId, buyerLimits[key], rateLimitEnabled, ratePerMinute, onResult, async (n) => {
         done[key] = n;
         await reportProgress();
-      })
+      }, onPauseChange)
     )
   );
 }

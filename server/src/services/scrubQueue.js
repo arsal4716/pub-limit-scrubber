@@ -175,7 +175,12 @@ async function runJob(jobId) {
         saveChain = saveChain.then(() => job.save());
         return saveChain;
       },
-      enabledBuyers
+      enabledBuyers,
+      (paused) => {
+        job.paused = paused;
+        saveChain = saveChain.then(() => job.save());
+        return saveChain;
+      }
     );
   }
 
@@ -183,6 +188,7 @@ async function runJob(jobId) {
   await writeOutputFile(job.inputPath, outputPath, { phoneResults, delimiter, phoneColumn: analysis.phoneColumn });
 
   job.outputPath = outputPath;
+  job.paused = false;
   job.status = "completed";
   job.completedAt = new Date();
   await job.save();

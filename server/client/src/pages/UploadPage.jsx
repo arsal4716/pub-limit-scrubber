@@ -5,12 +5,15 @@ import { fetchMyPublisherProfile } from "../api/publisherAuth";
 import { usePublisherAuth } from "../context/PublisherAuthContext.jsx";
 import JobStatusCard from "../components/JobStatusCard.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
+import PortalStatusBanner, { usePortalStatus } from "../components/PortalStatusBanner.jsx";
 import StateRestrictionNotice from "../components/StateRestrictionNotice.jsx";
 
 export default function UploadPage() {
   const { name: publisherName } = usePublisherAuth();
   const [file, setFile] = useState(null);
   const [activeJobId, setActiveJobId] = useState(null);
+  const { data: portal } = usePortalStatus();
+  const portalClosed = portal && !portal.open;
 
   const { data: profile } = useQuery({
     queryKey: ["my-profile"],
@@ -95,6 +98,8 @@ export default function UploadPage() {
         </div>
       )}
 
+      <PortalStatusBanner />
+
       <form
         onSubmit={handleSubmit}
         className="rounded-xl border border-dashed border-slate-300 bg-white p-6 space-y-4"
@@ -112,7 +117,7 @@ export default function UploadPage() {
         )}
         <button
           type="submit"
-          disabled={!file || uploadMutation.isPending}
+          disabled={!file || uploadMutation.isPending || portalClosed}
           className="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {uploadMutation.isPending ? "Uploading..." : "Upload & scrub"}

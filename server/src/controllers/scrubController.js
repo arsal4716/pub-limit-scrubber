@@ -4,6 +4,7 @@ const ScrubJob = require("../models/ScrubJob");
 const { enqueueJob, pendingPhoneCountAhead } = require("../services/scrubQueue");
 const { leadsPerMinuteRate } = require("../services/buyerApiClient");
 const { getPublisherUsageSnapshot } = require("../services/buyerLimitService");
+const { getPortalStatus } = require("../services/operatingHours");
 const { todayKey } = require("../utils/dateKey");
 const { PHONE_HEADER_CANDIDATES, STATE_HEADER_CANDIDATES } = require("../services/phoneUtils");
 
@@ -90,7 +91,13 @@ function isOwnJob(req, job) {
 async function getStatus(req, res) {
   const job = await ScrubJob.findById(req.params.jobId);
   if (!job || !isOwnJob(req, job)) return res.status(404).json({ error: "Job not found" });
-  res.json(jobToStatusDto(job));
+  const dto = jobToStatusDto(job);
+  if (job.paused) {
+    const status = await getPortalStatus();
+    dto.paused = true;
+    dto.pauseMessage = status.message || "Paused briefly. Scrubbing resumes automatically.";
+  }
+  res.json(dto);
 }
 
 async function downloadOutput(req, res) {

@@ -65,6 +65,12 @@ export default function JobStatusCard({ jobId, admin = false }) {
         <StatusBadge status={job.status} />
       </div>
 
+      {job.paused && (
+        <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-lg p-3">
+          Paused: {job.pauseMessage} Your file will continue automatically.
+        </p>
+      )}
+
       {job.status === "failed" && (
         <p className="text-sm text-red-600">{job.errorMessage || "Something went wrong."}</p>
       )}
