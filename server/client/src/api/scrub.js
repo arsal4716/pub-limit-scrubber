@@ -1,6 +1,11 @@
 import publisherClient from "./publisherClient";
 import adminClient from "./client";
 
+export async function fetchPortalStatus() {
+  const { data } = await publisherClient.get("/scrub/portal-status");
+  return data;
+}
+
 export async function fetchUploadRequirements() {
   const { data } = await publisherClient.get("/scrub/upload-requirements");
   return data;

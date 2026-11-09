@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const Publisher = require("../models/Publisher");
 const ScrubJob = require("../models/ScrubJob");
-const { getOrCreateGlobalConfig, updateGlobalDailyLimit, updateRateLimitSettings, updateBuyerToggles } = require("../services/limitService");
+const { getOrCreateGlobalConfig, updateGlobalDailyLimit, updateRateLimitSettings, updateBuyerToggles, updatePortalEnabled } = require("../services/limitService");
 const {
   validateGlobalLimitChange,
   validatePublisherLimitChange,
@@ -26,6 +26,7 @@ async function getConfig(req, res) {
     activePublisherCount: snapshot.activePublisherCount,
     rateLimitEnabled: globalConfig.rateLimitEnabled,
     rateLimitPerMinute: globalConfig.rateLimitPerMinute,
+    portalEnabled: globalConfig.portalEnabled,
     lmEnabled: globalConfig.lmEnabled,
     hcEnabled: globalConfig.hcEnabled,
     dateKey: todayKey(),
@@ -41,6 +42,15 @@ async function updateConfig(req, res) {
   await validateGlobalLimitChange(totalDailyLimit);
   const config = await updateGlobalDailyLimit(totalDailyLimit);
   res.json({ totalDailyLimit: config.totalDailyLimit });
+}
+
+async function updatePortal(req, res) {
+  const { enabled } = req.body;
+  if (typeof enabled !== "boolean") {
+    return res.status(400).json({ error: "enabled must be a boolean" });
+  }
+  const config = await updatePortalEnabled(enabled);
+  res.json({ portalEnabled: config.portalEnabled });
 }
 
 async function updateBuyers(req, res) {
@@ -285,6 +295,7 @@ async function deleteJob(req, res) {
 }
 
 module.exports = {
+  updatePortal,
   updateBuyers,
   createApiKey,
   revokeApiKey,

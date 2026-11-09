@@ -18,6 +18,11 @@ export async function updateRateLimitSettings({ enabled, ratePerMinute } = {}) {
   return data;
 }
 
+export async function updatePortalEnabled(enabled) {
+  const { data } = await client.put("/admin/portal", { enabled });
+  return data;
+}
+
 export async function updateBuyerToggles({ lmEnabled, hcEnabled } = {}) {
   const body = {};
   if (lmEnabled !== undefined) body.lmEnabled = lmEnabled;

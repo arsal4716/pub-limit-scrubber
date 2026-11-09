@@ -9,6 +9,7 @@ const {
   listJobs,
   deleteJob,
   updateBuyers,
+  updatePortal,
   createApiKey,
   revokeApiKey,
 } = require("../controllers/adminController");
@@ -24,6 +25,7 @@ router.get("/config", asyncHandler(getConfig));
 router.put("/config", asyncHandler(updateConfig));
 router.put("/rate-limit", asyncHandler(updateRateLimit));
 
+router.put("/portal", asyncHandler(updatePortal));
 router.put("/buyers", asyncHandler(updateBuyers));
 
 router.get("/publishers", asyncHandler(listPublishers));

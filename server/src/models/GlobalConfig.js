@@ -19,6 +19,10 @@ const globalConfigSchema = new mongoose.Schema(
     // Which buyer APIs are used. Both on = file scrubs split the list
     // between them (realtime checks both). Exactly one on = every number
     // goes through that one buyer only. Defaults: HC only, LM off.
+    // Master switch. false = portal shown as "temporarily down" to
+    // publishers: no new uploads or API checks, and running jobs pause
+    // their buyer calls until it's turned back on.
+    portalEnabled: { type: Boolean, default: true },
     lmEnabled: { type: Boolean, default: false },
     hcEnabled: { type: Boolean, default: true },
     rateLimitPerMinute: { type: Number, default: 1000, min: 1 },

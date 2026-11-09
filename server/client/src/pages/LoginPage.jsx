@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { loginPublisher } from "../api/publisherAuth";
 import { usePublisherAuth } from "../context/PublisherAuthContext.jsx";
+import PortalStatusBanner from "../components/PortalStatusBanner.jsx";
 import StateRestrictionNotice from "../components/StateRestrictionNotice.jsx";
 
 export default function LoginPage() {
@@ -27,6 +28,7 @@ export default function LoginPage() {
 
   return (
     <div className="max-w-sm mx-auto mt-12">
+      <div className="mb-4"><PortalStatusBanner /></div>
       <h1 className="text-2xl font-semibold text-slate-800 text-center">Publisher sign in</h1>
       <div className="mt-4">
         <StateRestrictionNotice />
