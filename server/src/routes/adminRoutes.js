@@ -8,6 +8,9 @@ const {
   updatePublisher,
   listJobs,
   deleteJob,
+  updateBuyers,
+  createApiKey,
+  revokeApiKey,
 } = require("../controllers/adminController");
 const { uploadRun, listRuns, downloadRun, deleteRun } = require("../controllers/frequentController");
 const { upload } = require("../middleware/upload");
@@ -21,9 +24,14 @@ router.get("/config", asyncHandler(getConfig));
 router.put("/config", asyncHandler(updateConfig));
 router.put("/rate-limit", asyncHandler(updateRateLimit));
 
+router.put("/buyers", asyncHandler(updateBuyers));
+
 router.get("/publishers", asyncHandler(listPublishers));
 router.post("/publishers", asyncHandler(createPublisher));
 router.put("/publishers/:id", asyncHandler(updatePublisher));
+
+router.post("/publishers/:id/api-key", asyncHandler(createApiKey));
+router.delete("/publishers/:id/api-key", asyncHandler(revokeApiKey));
 
 router.get("/jobs", asyncHandler(listJobs));
 router.delete("/jobs/:id", asyncHandler(deleteJob));

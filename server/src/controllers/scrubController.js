@@ -31,7 +31,7 @@ function jobToStatusDto(job) {
     estimatedSeconds: job.estimatedSeconds,
     rateLimitEnabled: job.rateLimitEnabled,
     rateLimitPerMinute: job.rateLimitPerMinute,
-    leadsPerMinuteRate: leadsPerMinuteRate(job.rateLimitEnabled, job.rateLimitPerMinute),
+    leadsPerMinuteRate: leadsPerMinuteRate(job.rateLimitEnabled, job.rateLimitPerMinute, job.activeBuyerCount || 2),
     createdAt: job.createdAt,
     startedAt: job.startedAt,
     completedAt: job.completedAt,

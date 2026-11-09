@@ -18,6 +18,14 @@ export async function updateRateLimitSettings({ enabled, ratePerMinute } = {}) {
   return data;
 }
 
+export async function updateBuyerToggles({ lmEnabled, hcEnabled } = {}) {
+  const body = {};
+  if (lmEnabled !== undefined) body.lmEnabled = lmEnabled;
+  if (hcEnabled !== undefined) body.hcEnabled = hcEnabled;
+  const { data } = await client.put("/admin/buyers", body);
+  return data;
+}
+
 export async function fetchAdminPublishers() {
   const { data } = await client.get("/admin/publishers");
   return data;
@@ -30,6 +38,16 @@ export async function createAdminPublisher({ name, dailyLimit, email, password }
 
 export async function updateAdminPublisher(id, updates) {
   const { data } = await client.put(`/admin/publishers/${id}`, updates);
+  return data;
+}
+
+export async function createPublisherApiKey(id) {
+  const { data } = await client.post(`/admin/publishers/${id}/api-key`);
+  return data;
+}
+
+export async function revokePublisherApiKey(id) {
+  const { data } = await client.delete(`/admin/publishers/${id}/api-key`);
   return data;
 }
 

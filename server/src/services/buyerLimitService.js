@@ -1,6 +1,6 @@
 const BuyerUsage = require("../models/BuyerUsage");
 const Publisher = require("../models/Publisher");
-const { getOrCreateGlobalConfig } = require("./limitService");
+const { getOrCreateGlobalConfig, enabledBuyersFrom } = require("./limitService");
 const { todayKey } = require("../utils/dateKey");
 const { BUYER_KEYS } = require("../constants/buyers");
 
@@ -9,11 +9,13 @@ const MAX_RESERVE_ATTEMPTS = 5;
 // A publisher's own dailyLimit is split 50/50 between the two buyers - LM
 // gets the ceiling half so the two halves always add back up to the whole
 // on an odd limit (e.g. 100,001 -> 50,001 LM + 50,000 HC).
-function getPublisherBuyerLimits(dailyLimit) {
-  return {
-    LM: Math.ceil(dailyLimit / 2),
-    HC: Math.floor(dailyLimit / 2),
-  };
+// With only one buyer enabled that buyer gets the publisher's whole limit
+// and the disabled one gets 0.
+function getPublisherBuyerLimits(dailyLimit, enabled = { LM: true, HC: true }) {
+  if (enabled.LM && enabled.HC) {
+    return { LM: Math.ceil(dailyLimit / 2), HC: Math.floor(dailyLimit / 2) };
+  }
+  return { LM: enabled.LM ? dailyLimit : 0, HC: enabled.HC ? dailyLimit : 0 };
 }
 
 async function getOrCreateBuyerUsageDoc(dateKey, buyerKey, publisherId) {
@@ -98,7 +100,7 @@ async function validateGlobalLimitChange(proposedTotalDailyLimit) {
 async function getPublisherUsageSnapshot(publisherId, dateKey = todayKey()) {
   const publisher = await Publisher.findById(publisherId);
   const dailyLimit = publisher ? publisher.dailyLimit : 0;
-  const buyerLimits = getPublisherBuyerLimits(dailyLimit);
+  const buyerLimits = getPublisherBuyerLimits(dailyLimit, enabledBuyersFrom(await getOrCreateGlobalConfig()));
 
   const buyers = await Promise.all(
     BUYER_KEYS.map(async (key) => {

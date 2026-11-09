@@ -148,28 +148,34 @@ async function processPhonesForBuyer(buyerKey, phones, phoneStates, publisherId,
 // exactly one buyer's result, since each phone is only ever routed to one.
 // `onBatchDone(processedSoFar, total)` fires after either loop makes
 // progress, so callers can persist combined progress for polling clients.
-async function processPhonesSplit(phones, phoneStates, publisherId, buyerLimits, rateLimitEnabled, ratePerMinute, onResult, onBatchDone) {
+async function processPhonesSplit(phones, phoneStates, publisherId, buyerLimits, rateLimitEnabled, ratePerMinute, onResult, onBatchDone, enabled = { LM: true, HC: true }) {
   const total = phones.length;
-  const mid = Math.ceil(total / 2);
-  const buyer1Phones = phones.slice(0, mid);
-  const buyer2Phones = phones.slice(mid);
+  // Both buyers on: split the list in half. One buyer on: it gets every phone.
+  const assignments = [];
+  if (enabled.LM && enabled.HC) {
+    const mid = Math.ceil(total / 2);
+    assignments.push(["LM", phones.slice(0, mid)], ["HC", phones.slice(mid)]);
+  } else if (enabled.LM) {
+    assignments.push(["LM", phones]);
+  } else if (enabled.HC) {
+    assignments.push(["HC", phones]);
+  } else {
+    throw new Error("No buyer API is enabled");
+  }
 
-  let buyer1Done = 0;
-  let buyer2Done = 0;
+  const done = {};
   const reportProgress = async () => {
-    if (onBatchDone) await onBatchDone(buyer1Done + buyer2Done, total);
+    if (onBatchDone) await onBatchDone(Object.values(done).reduce((a, b) => a + b, 0), total);
   };
 
-  await Promise.all([
-    processPhonesForBuyer("LM", buyer1Phones, phoneStates, publisherId, buyerLimits.LM, rateLimitEnabled, ratePerMinute, onResult, async (n) => {
-      buyer1Done = n;
-      await reportProgress();
-    }),
-    processPhonesForBuyer("HC", buyer2Phones, phoneStates, publisherId, buyerLimits.HC, rateLimitEnabled, ratePerMinute, onResult, async (n) => {
-      buyer2Done = n;
-      await reportProgress();
-    }),
-  ]);
+  await Promise.all(
+    assignments.map(([key, list]) =>
+      processPhonesForBuyer(key, list, phoneStates, publisherId, buyerLimits[key], rateLimitEnabled, ratePerMinute, onResult, async (n) => {
+        done[key] = n;
+        await reportProgress();
+      })
+    )
+  );
 }
 
 // Combined sustained throughput across BOTH buyers running in parallel on
@@ -178,9 +184,9 @@ async function processPhonesSplit(phones, phoneStates, publisherId, buyerLimits,
 // disabled - there's no fixed pace to report, throughput is however fast
 // the buyer APIs and network allow, so callers should show that instead
 // of fabricating a number.
-function leadsPerMinuteRate(rateLimitEnabled = true, ratePerMinute = 1000) {
+function leadsPerMinuteRate(rateLimitEnabled = true, ratePerMinute = 1000, activeBuyerCount = 2) {
   if (!rateLimitEnabled) return null;
-  return 2 * ratePerMinute;
+  return activeBuyerCount * ratePerMinute;
 }
 
 module.exports = { processPhonesSplit, leadsPerMinuteRate, pingLM, pingHC };

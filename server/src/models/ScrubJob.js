@@ -71,6 +71,7 @@ const scrubJobSchema = new mongoose.Schema(
     // change between jobs.
     rateLimitEnabled: { type: Boolean, default: true },
     rateLimitPerMinute: { type: Number, default: 1000 },
+    activeBuyerCount: { type: Number, default: 2 }, // buyers enabled when this job started
 
     startedAt: { type: Date, default: null },
     completedAt: { type: Date, default: null },
