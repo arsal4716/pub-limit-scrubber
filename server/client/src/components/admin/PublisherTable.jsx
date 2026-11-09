@@ -31,6 +31,12 @@ export default function PublisherTable() {
   const [passwordValue, setPasswordValue] = useState("");
   const [newApiKey, setNewApiKey] = useState(null);
 
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["admin-publishers"] });
+    queryClient.invalidateQueries({ queryKey: ["global-config"] });
+  };
+
   const apiKeyMutation = useMutation({
     mutationFn: createPublisherApiKey,
     onSuccess: (res) => {
@@ -39,12 +45,6 @@ export default function PublisherTable() {
     },
   });
   const revokeKeyMutation = useMutation({ mutationFn: revokePublisherApiKey, onSuccess: invalidate });
-
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ["admin-publishers"] });
-    queryClient.invalidateQueries({ queryKey: ["global-config"] });
-  };
-
   const createMutation = useMutation({
     mutationFn: () =>
       createAdminPublisher({
