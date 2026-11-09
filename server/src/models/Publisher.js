@@ -59,6 +59,10 @@ const publisherSchema = new mongoose.Schema(
     // Empty = no restriction, login allowed from any IP with valid
     // credentials. Non-empty = login only allowed from one of these exact
     // client IPs (see services/publisherAuthService.isIpAllowed).
+    // SHA-256 of the publisher's API key (the key itself is shown once at
+    // creation and never stored). Used by /api/v1 realtime scrubbing.
+    apiKeyHash: { type: String, select: false, index: true, sparse: true },
+    apiKeyPrefix: { type: String }, // first chars only, so admins can tell keys apart
     allowedIps: {
       type: [String],
       default: [],

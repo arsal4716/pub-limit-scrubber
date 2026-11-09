@@ -58,6 +58,8 @@ async function updateRateLimit(req, res) {
   res.json({ rateLimitEnabled: config.rateLimitEnabled, rateLimitPerMinute: config.rateLimitPerMinute });
 }
 
+const { generateApiKey, hashApiKey } = require("../middleware/apiKeyAuth");
+
 async function listPublishers(req, res) {
   // passwordHash is select:false by default - opt back in here just to
   // derive the `canLogin` boolean below; the raw hash itself is never
@@ -77,6 +79,7 @@ async function listPublishers(req, res) {
         signupStatus: p.signupStatus,
         allowedIps: p.allowedIps || [],
         canLogin: !!p.passwordHash,
+        apiKeyPrefix: p.apiKeyPrefix || null,
         usedToday: snapshot.usedToday,
         remainingToday: snapshot.remainingToday,
         buyers: snapshot.buyers, // per-buyer half-limit + usage, informational
@@ -197,6 +200,27 @@ async function updatePublisher(req, res) {
   });
 }
 
+// Generates a new API key for a publisher (replacing any existing one). The
+// plaintext key is returned ONCE here - only its hash is stored.
+async function createApiKey(req, res) {
+  const publisher = await Publisher.findById(req.params.id);
+  if (!publisher) return res.status(404).json({ error: "Publisher not found" });
+  const key = generateApiKey();
+  publisher.apiKeyHash = hashApiKey(key);
+  publisher.apiKeyPrefix = key.slice(0, 7);
+  await publisher.save();
+  res.status(201).json({ apiKey: key });
+}
+
+async function revokeApiKey(req, res) {
+  const publisher = await Publisher.findById(req.params.id);
+  if (!publisher) return res.status(404).json({ error: "Publisher not found" });
+  publisher.apiKeyHash = undefined;
+  publisher.apiKeyPrefix = undefined;
+  await publisher.save();
+  res.json({ ok: true });
+}
+
 async function listJobs(req, res) {
   const { publisherId, dateKey, status, page = 1, limit = 25 } = req.query;
 
@@ -239,6 +263,8 @@ async function deleteJob(req, res) {
 }
 
 module.exports = {
+  createApiKey,
+  revokeApiKey,
   getConfig,
   updateConfig,
   updateRateLimit,

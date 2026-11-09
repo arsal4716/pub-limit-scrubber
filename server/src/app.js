@@ -6,6 +6,7 @@ const authRoutes = require("./routes/authRoutes");
 const publisherAuthRoutes = require("./routes/publisherAuthRoutes");
 const scrubRoutes = require("./routes/scrubRoutes");
 const adminRoutes = require("./routes/adminRoutes");
+const apiV1Routes = require("./routes/apiV1Routes");
 const { notFound, errorHandler } = require("./middleware/errorHandler");
 
 const app = express();
@@ -24,6 +25,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/publisher-auth", publisherAuthRoutes);
 app.use("/api/scrub", scrubRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/v1", apiV1Routes);
 
 // Serve the built React app (server/client/dist) and everything else on the
 // same port - the client and API are same-origin in production, so no CORS

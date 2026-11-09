@@ -33,6 +33,16 @@ export async function updateAdminPublisher(id, updates) {
   return data;
 }
 
+export async function createPublisherApiKey(id) {
+  const { data } = await client.post(`/admin/publishers/${id}/api-key`);
+  return data;
+}
+
+export async function revokePublisherApiKey(id) {
+  const { data } = await client.delete(`/admin/publishers/${id}/api-key`);
+  return data;
+}
+
 export async function fetchAdminJobs(params) {
   const { data } = await client.get("/admin/jobs", { params });
   return data;

@@ -4,6 +4,8 @@ import {
   fetchAdminPublishers,
   createAdminPublisher,
   updateAdminPublisher,
+  createPublisherApiKey,
+  revokePublisherApiKey,
 } from "../../api/admin";
 import ProgressBar from "../ProgressBar.jsx";
 
@@ -27,6 +29,16 @@ export default function PublisherTable() {
   const [accessId, setAccessId] = useState(null);
   const [ipsValue, setIpsValue] = useState("");
   const [passwordValue, setPasswordValue] = useState("");
+  const [newApiKey, setNewApiKey] = useState(null);
+
+  const apiKeyMutation = useMutation({
+    mutationFn: createPublisherApiKey,
+    onSuccess: (res) => {
+      setNewApiKey(res.apiKey);
+      invalidate();
+    },
+  });
+  const revokeKeyMutation = useMutation({ mutationFn: revokePublisherApiKey, onSuccess: invalidate });
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["admin-publishers"] });
@@ -332,6 +344,37 @@ export default function PublisherTable() {
                             Save password
                           </button>
                         </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">
+                          API key {pub.apiKeyPrefix ? `(current: ${pub.apiKeyPrefix}...)` : "(none)"}
+                        </label>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => {
+                              setNewApiKey(null);
+                              if (!pub.apiKeyPrefix || window.confirm("Replace the existing key? The old one stops working.")) {
+                                apiKeyMutation.mutate(pub.id);
+                              }
+                            }}
+                            className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                          >
+                            {pub.apiKeyPrefix ? "Regenerate" : "Generate"}
+                          </button>
+                          {pub.apiKeyPrefix && (
+                            <button
+                              onClick={() => revokeKeyMutation.mutate(pub.id)}
+                              className="text-xs font-medium text-red-600 hover:text-red-800"
+                            >
+                              Revoke
+                            </button>
+                          )}
+                        </div>
+                        {newApiKey && accessId === pub.id && (
+                          <p className="mt-2 text-xs text-emerald-700 break-all">
+                            Copy now, it won't be shown again: <code>{newApiKey}</code>
+                          </p>
+                        )}
                       </div>
                     </div>
                   </td>
