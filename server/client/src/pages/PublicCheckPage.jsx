@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { verifyCheckLink, checkNumber } from "../api/publicCheck";
+import { normalizePhone } from "../utils/phone";
 import PortalStatusBanner, { usePortalStatus } from "../components/PortalStatusBanner.jsx";
 
 const OUTCOMES = {
@@ -32,7 +33,22 @@ export default function PublicCheckPage() {
     retry: false,
   });
 
+  const [inputError, setInputError] = useState(null);
+
   const mutation = useMutation({ mutationFn: () => checkNumber(token, { phone, state }) });
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (!phone.trim()) return;
+    // Validate here first so junk (e.g. a 20-digit string) never gets sent.
+    if (!normalizePhone(phone)) {
+      mutation.reset();
+      setInputError("Please enter a valid 10-digit US phone number, e.g. (512) 555-0003.");
+      return;
+    }
+    setInputError(null);
+    mutation.mutate();
+  }
 
   if (isLoading) return <p className="text-center text-slate-500 mt-12">Loading...</p>;
   if (linkInvalid) {
@@ -53,10 +69,7 @@ export default function PublicCheckPage() {
       <h1 className="text-2xl font-semibold text-slate-800 text-center">Check a number</h1>
       <PortalStatusBanner />
       <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (phone.trim()) mutation.mutate();
-        }}
+        onSubmit={handleSubmit}
         className="rounded-xl border border-slate-200 bg-white p-5 space-y-4"
       >
         <div>
@@ -66,7 +79,11 @@ export default function PublicCheckPage() {
           <input
             id="phone"
             value={phone}
-            onChange={(e) => setPhone(e.target.value)}
+            onChange={(e) => {
+              setPhone(e.target.value);
+              setInputError(null);
+            }}
+            maxLength={25}
             placeholder="(555) 123-4567"
             inputMode="tel"
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -98,6 +115,10 @@ export default function PublicCheckPage() {
           {mutation.isPending ? "Checking..." : "Check number"}
         </button>
       </form>
+
+      {inputError && (
+        <p role="alert" className="text-sm text-red-600 text-center">{inputError}</p>
+      )}
 
       {mutation.isError && (
         <p className="text-sm text-red-600 text-center">

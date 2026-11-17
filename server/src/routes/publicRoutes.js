@@ -17,6 +17,9 @@ router.post(
   asyncHandler(async (req, res) => {
     const { phone, state } = req.body || {};
     if (!phone) return res.status(400).json({ error: "Please enter a phone number." });
+    if (String(phone).length > 30) {
+      return res.status(400).json({ error: "That number is too long. Please enter a 10-digit US phone number." });
+    }
     const result = await checkAndRecord(req.publisher, phone, state, "link");
     // Public response: no buyer names, no internals.
     res.json({
