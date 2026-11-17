@@ -12,6 +12,9 @@ function normalizePhone(phone) {
 
   let digits = withoutExtension.replace(/\D/g, "");
 
+  // International dialing prefix ("011 1 ..." / "00 1 ...") before the US code.
+  digits = digits.replace(/^(011|00)(?=1\d{10}$)/, "");
+
   // Strip a leading US country code.
   if (digits.length === 11 && digits.startsWith("1")) {
     digits = digits.substring(1);

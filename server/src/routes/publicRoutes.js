@@ -21,6 +21,7 @@ router.post(
     // Public response: no buyer names, no internals.
     res.json({
       phone: result.phone,
+      state: result.state || null,
       status: result.status,
       isDuplicate: result.status === "blocked" || result.status === "dnc",
       reason: result.reason,

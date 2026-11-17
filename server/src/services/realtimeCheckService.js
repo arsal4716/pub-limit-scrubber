@@ -11,6 +11,14 @@ const { getOrCreateGlobalConfig, enabledBuyersFrom } = require("./limitService")
 // the publisher's own daily limit (split 50/50), same as file scrubs.
 // Buyer names are never exposed - only buyer1/buyer2.
 async function checkNumber(publisher, rawPhone, rawState) {
+  const result = await runCheck(publisher, rawPhone, rawState);
+  if (result.status !== "invalid") {
+    result.state = (rawState && normalizeStateCode(rawState)) || deriveStateFromAreaCode(result.phone);
+  }
+  return result;
+}
+
+async function runCheck(publisher, rawPhone, rawState) {
   const phone = normalizePhone(rawPhone);
   if (!phone) {
     return { phone: rawPhone ?? null, status: "invalid", reason: "Not a valid US phone number" };
@@ -62,7 +70,7 @@ async function checkAndRecord(publisher, rawPhone, rawState, source) {
     try {
       await LeadCheck.create({
         phone: result.phone,
-        state: (rawState && normalizeStateCode(rawState)) || deriveStateFromAreaCode(result.phone),
+        state: result.state || null,
         publisherId: publisher._id,
         publisherName: publisher.name,
         status: result.status,

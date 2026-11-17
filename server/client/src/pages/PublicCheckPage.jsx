@@ -10,6 +10,7 @@ const OUTCOMES = {
   dnc: { title: "Duplicate", detail: "This number is already on the DNC list.", tone: "red" },
   invalid: { title: "Invalid number", detail: "That isn't a valid US phone number.", tone: "amber" },
   limit_reached: { title: "Limit reached", detail: "Your daily limit has been used up.", tone: "amber" },
+  state_needed: { title: "State needed", detail: "We couldn't work out the state from this number's area code. Please enter the state and check again.", tone: "amber" },
   error: { title: "Couldn't check", detail: "Something went wrong checking this number. Please try again.", tone: "amber" },
 };
 
@@ -42,7 +43,9 @@ export default function PublicCheckPage() {
     );
   }
 
-  const outcome = mutation.data ? OUTCOMES[mutation.data.status] : null;
+  const needsState =
+    mutation.data?.status === "error" && /state could not be determined/i.test(mutation.data.reason || "");
+  const outcome = mutation.data ? (needsState ? OUTCOMES.state_needed : OUTCOMES[mutation.data.status]) : null;
   const closed = portal && !portal.open;
 
   return (
@@ -69,18 +72,24 @@ export default function PublicCheckPage() {
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
         </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-600 mb-1" htmlFor="state">
-            State (optional)
-          </label>
-          <input
-            id="state"
-            value={state}
-            onChange={(e) => setState(e.target.value)}
-            placeholder="TX, or leave blank to detect from the number"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          />
-        </div>
+        {needsState && (
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1" htmlFor="state">
+              State
+            </label>
+            <input
+              id="state"
+              value={state}
+              onChange={(e) => setState(e.target.value)}
+              placeholder="TX"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+        )}
+        <p className="text-xs text-slate-400">
+          Any US format works (e.g. 5125550003, (512) 555-0003, +1 512-555-0003). The state is
+          detected automatically from the area code.
+        </p>
         <button
           type="submit"
           disabled={!phone.trim() || mutation.isPending || closed}
@@ -101,6 +110,7 @@ export default function PublicCheckPage() {
           <p className="font-semibold">
             {outcome.title}
             {mutation.data.phone && <span className="font-normal"> · {mutation.data.phone}</span>}
+            {mutation.data.state && <span className="font-normal"> · {mutation.data.state}</span>}
           </p>
           <p className="mt-1">{outcome.detail}</p>
         </div>
