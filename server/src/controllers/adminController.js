@@ -3,7 +3,7 @@ const path = require("path");
 const Publisher = require("../models/Publisher");
 const LeadCheck = require("../models/LeadCheck");
 const ScrubJob = require("../models/ScrubJob");
-const { getOrCreateGlobalConfig, updateGlobalDailyLimit, updateRateLimitSettings, updateBuyerToggles, updatePortalEnabled } = require("../services/limitService");
+const { getOrCreateGlobalConfig, updateGlobalDailyLimit, updateRateLimitSettings, updateBuyerToggles, updatePortalMode } = require("../services/limitService");
 const {
   validateGlobalLimitChange,
   validatePublisherLimitChange,
@@ -27,7 +27,7 @@ async function getConfig(req, res) {
     activePublisherCount: snapshot.activePublisherCount,
     rateLimitEnabled: globalConfig.rateLimitEnabled,
     rateLimitPerMinute: globalConfig.rateLimitPerMinute,
-    portalEnabled: globalConfig.portalEnabled,
+    portalMode: getPortalMode(globalConfig),
     lmEnabled: globalConfig.lmEnabled,
     hcEnabled: globalConfig.hcEnabled,
     dateKey: todayKey(),
@@ -77,12 +77,12 @@ async function listLeadChecks(req, res) {
 }
 
 async function updatePortal(req, res) {
-  const { enabled } = req.body;
-  if (typeof enabled !== "boolean") {
-    return res.status(400).json({ error: "enabled must be a boolean" });
+  const { mode } = req.body;
+  if (!["always", "hours", "off"].includes(mode)) {
+    return res.status(400).json({ error: 'mode must be "always", "hours" or "off"' });
   }
-  const config = await updatePortalEnabled(enabled);
-  res.json({ portalEnabled: config.portalEnabled });
+  const config = await updatePortalMode(mode);
+  res.json({ portalMode: getPortalMode(config) });
 }
 
 async function updateBuyers(req, res) {
@@ -122,6 +122,7 @@ async function updateRateLimit(req, res) {
   res.json({ rateLimitEnabled: config.rateLimitEnabled, rateLimitPerMinute: config.rateLimitPerMinute });
 }
 
+const { getPortalMode } = require("../services/operatingHours");
 const { generateApiKey, hashApiKey } = require("../middleware/apiKeyAuth");
 
 async function listPublishers(req, res) {
