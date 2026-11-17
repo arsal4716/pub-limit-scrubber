@@ -6,6 +6,7 @@ const { processPhonesSplit, leadsPerMinuteRate } = require("./buyerApiClient");
 const { checkPhonesForDnc } = require("./internalDncClient");
 const { getPublisherBuyerLimits } = require("./buyerLimitService");
 const { getOrCreateGlobalConfig, enabledBuyersFrom } = require("./limitService");
+const LeadCheck = require("../models/LeadCheck");
 const { detectDelimiter } = require("../utils/csvDelimiter");
 
 function applyBuyerStat(stat, status) {
@@ -67,6 +68,45 @@ async function runLoop() {
   }
 
   isRunning = false;
+}
+
+const FILE_STATUS = {
+  Blocked: "blocked",
+  Available: "available",
+  DNC: "dnc",
+  Error: "error",
+  "Not Checked": "not_checked",
+};
+
+// Saves every checked lead from a finished job to lead_checks (replacing
+// rows from an earlier attempt at the same job, e.g. after a restart).
+async function saveLeadChecks(job, publisherName, phoneResults, phoneStates) {
+  await LeadCheck.deleteMany({ jobId: job._id });
+  const CHUNK = 5000;
+  let batch = [];
+  const flush = async () => {
+    if (batch.length === 0) return;
+    await LeadCheck.insertMany(batch, { ordered: false });
+    batch = [];
+  };
+  for (const [phone, result] of phoneResults) {
+    const status = FILE_STATUS[result.status];
+    if (!status) continue;
+    batch.push({
+      phone,
+      state: phoneStates.get(phone) || null,
+      publisherId: job.publisherId,
+      publisherName,
+      status,
+      isDuplicate: status === "blocked" || status === "dnc",
+      reason: result.message || null,
+      buyerSlot: result.slot || null,
+      source: "file",
+      jobId: job._id,
+    });
+    if (batch.length >= CHUNK) await flush();
+  }
+  await flush();
 }
 
 async function runJob(jobId) {
@@ -186,6 +226,8 @@ async function runJob(jobId) {
 
   const outputPath = path.join(path.dirname(job.inputPath), "output.csv");
   await writeOutputFile(job.inputPath, outputPath, { phoneResults, delimiter, phoneColumn: analysis.phoneColumn });
+
+  await saveLeadChecks(job, publisher ? publisher.name : job.publisherName, phoneResults, analysis.phoneStates);
 
   job.outputPath = outputPath;
   job.paused = false;

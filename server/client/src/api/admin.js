@@ -56,6 +56,16 @@ export async function revokePublisherApiKey(id) {
   return data;
 }
 
+export async function regenerateCheckLink(id) {
+  const { data } = await client.post(`/admin/publishers/${id}/check-link`);
+  return data;
+}
+
+export async function fetchLeadChecks(params) {
+  const { data } = await client.get("/admin/lead-checks", { params });
+  return data;
+}
+
 export async function fetchAdminJobs(params) {
   const { data } = await client.get("/admin/jobs", { params });
   return data;

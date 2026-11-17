@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const Publisher = require("../models/Publisher");
+const LeadCheck = require("../models/LeadCheck");
 const ScrubJob = require("../models/ScrubJob");
 const { getOrCreateGlobalConfig, updateGlobalDailyLimit, updateRateLimitSettings, updateBuyerToggles, updatePortalEnabled } = require("../services/limitService");
 const {
@@ -42,6 +43,37 @@ async function updateConfig(req, res) {
   await validateGlobalLimitChange(totalDailyLimit);
   const config = await updateGlobalDailyLimit(totalDailyLimit);
   res.json({ totalDailyLimit: config.totalDailyLimit });
+}
+
+// Replaces a publisher's public check-link token; the old link stops working.
+async function regenerateCheckLink(req, res) {
+  const publisher = await Publisher.findById(req.params.id);
+  if (!publisher) return res.status(404).json({ error: "Publisher not found" });
+  publisher.checkLinkToken = Publisher.newCheckLinkToken();
+  await publisher.save();
+  res.json({ checkLinkToken: publisher.checkLinkToken });
+}
+
+async function listLeadChecks(req, res) {
+  const { publisherId, status, source, phone, duplicate, page = 1, limit = 50 } = req.query;
+  const filter = {};
+  if (publisherId) filter.publisherId = publisherId;
+  if (status) filter.status = status;
+  if (source) filter.source = source;
+  if (duplicate === "true") filter.isDuplicate = true;
+  if (duplicate === "false") filter.isDuplicate = false;
+  if (phone) {
+    const digits = String(phone).replace(/\D/g, "");
+    if (digits) filter.phone = digits.length >= 10 ? digits.slice(-10) : { $regex: `^${digits}` };
+  }
+
+  const pageNum = Math.max(1, parseInt(page, 10) || 1);
+  const pageSize = Math.min(200, Math.max(1, parseInt(limit, 10) || 50));
+  const [checks, total] = await Promise.all([
+    LeadCheck.find(filter).sort({ createdAt: -1 }).skip((pageNum - 1) * pageSize).limit(pageSize),
+    LeadCheck.countDocuments(filter),
+  ]);
+  res.json({ checks, total, page: pageNum, pageSize });
 }
 
 async function updatePortal(req, res) {
@@ -97,6 +129,13 @@ async function listPublishers(req, res) {
   // derive the `canLogin` boolean below; the raw hash itself is never
   // included in the response.
   const publishers = await Publisher.find().select("+passwordHash").sort({ name: 1 });
+  // Backfill a public check-link token for publishers created before it existed.
+  for (const p of publishers) {
+    if (!p.checkLinkToken) {
+      p.checkLinkToken = Publisher.newCheckLinkToken();
+      await p.save();
+    }
+  }
   const dateKey = todayKey();
 
   const withUsage = await Promise.all(
@@ -112,6 +151,7 @@ async function listPublishers(req, res) {
         allowedIps: p.allowedIps || [],
         canLogin: !!p.passwordHash,
         apiKeyPrefix: p.apiKeyPrefix || null,
+        checkLinkToken: p.checkLinkToken,
         usedToday: snapshot.usedToday,
         remainingToday: snapshot.remainingToday,
         buyers: snapshot.buyers, // per-buyer half-limit + usage, informational
@@ -295,6 +335,8 @@ async function deleteJob(req, res) {
 }
 
 module.exports = {
+  regenerateCheckLink,
+  listLeadChecks,
   updatePortal,
   updateBuyers,
   createApiKey,

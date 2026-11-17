@@ -5,6 +5,7 @@ import ProtectedPublisherRoute from "./components/ProtectedPublisherRoute.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
 import SignupPage from "./pages/SignupPage.jsx";
 import UploadPage from "./pages/UploadPage.jsx";
+import PublicCheckPage from "./pages/PublicCheckPage.jsx";
 import StatusPage from "./pages/StatusPage.jsx";
 import AdminLoginPage from "./pages/admin/AdminLoginPage.jsx";
 import AdminJobPage from "./pages/admin/AdminJobPage.jsx";
@@ -17,6 +18,7 @@ function App() {
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
+        <Route path="/c/:token" element={<PublicCheckPage />} />
 
         <Route element={<ProtectedPublisherRoute />}>
           <Route path="/upload" element={<UploadPage />} />
