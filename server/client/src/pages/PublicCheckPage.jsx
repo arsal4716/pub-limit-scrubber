@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { verifyCheckLink, checkNumber } from "../api/publicCheck";
-import { normalizePhone } from "../utils/phone";
+import { normalizePhone, formatUsPhoneInput } from "../utils/phone";
 import PortalStatusBanner, { usePortalStatus } from "../components/PortalStatusBanner.jsx";
 
 const OUTCOMES = {
@@ -35,7 +35,7 @@ export default function PublicCheckPage() {
 
   const [inputError, setInputError] = useState(null);
 
-  const mutation = useMutation({ mutationFn: () => checkNumber(token, { phone, state }) });
+  const mutation = useMutation({ mutationFn: () => checkNumber(token, { phone: normalizePhone(phone), state }) });
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -80,10 +80,11 @@ export default function PublicCheckPage() {
             id="phone"
             value={phone}
             onChange={(e) => {
-              setPhone(e.target.value);
+              setPhone(formatUsPhoneInput(e.target.value));
               setInputError(null);
             }}
-            maxLength={25}
+            maxLength={14}
+            autoComplete="off"
             placeholder="(555) 123-4567"
             inputMode="tel"
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -104,12 +105,12 @@ export default function PublicCheckPage() {
           </div>
         )}
         <p className="text-xs text-slate-400">
-          Any US format works (e.g. 5125550003, (512) 555-0003, +1 512-555-0003). The state is
-          detected automatically from the area code.
+          Enter a 10-digit US number. You can paste it in any format (e.g. +1 512-555-0003) and
+          it's tidied up automatically. The state is detected from the area code.
         </p>
         <button
           type="submit"
-          disabled={!phone.trim() || mutation.isPending || closed}
+          disabled={!normalizePhone(phone) || mutation.isPending || closed}
           className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {mutation.isPending ? "Checking..." : "Check number"}
