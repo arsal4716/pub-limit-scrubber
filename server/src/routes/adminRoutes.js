@@ -10,6 +10,8 @@ const {
   deleteJob,
   updateBuyers,
   updatePortal,
+  regenerateCheckLink,
+  listLeadChecks,
   createApiKey,
   revokeApiKey,
 } = require("../controllers/adminController");
@@ -32,6 +34,9 @@ router.put("/publishers/:id", asyncHandler(updatePublisher));
 
 router.post("/publishers/:id/api-key", asyncHandler(createApiKey));
 router.delete("/publishers/:id/api-key", asyncHandler(revokeApiKey));
+
+router.post("/publishers/:id/check-link", asyncHandler(regenerateCheckLink));
+router.get("/lead-checks", asyncHandler(listLeadChecks));
 
 router.get("/jobs", asyncHandler(listJobs));
 router.delete("/jobs/:id", asyncHandler(deleteJob));

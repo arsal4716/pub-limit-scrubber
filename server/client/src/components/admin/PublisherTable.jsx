@@ -5,6 +5,7 @@ import {
   createAdminPublisher,
   updateAdminPublisher,
   createPublisherApiKey,
+  regenerateCheckLink,
   revokePublisherApiKey,
 } from "../../api/admin";
 import ProgressBar from "../ProgressBar.jsx";
@@ -44,6 +45,18 @@ export default function PublisherTable() {
       invalidate();
     },
   });
+  const linkMutation = useMutation({ mutationFn: regenerateCheckLink, onSuccess: invalidate });
+  const [copied, setCopied] = useState(null);
+  const linkFor = (pub) => `${window.location.origin}/c/${pub.checkLinkToken}`;
+  async function copyLink(pub) {
+    try {
+      await navigator.clipboard.writeText(linkFor(pub));
+      setCopied(pub.id);
+      setTimeout(() => setCopied(null), 2000);
+    } catch {
+      window.prompt("Copy this link:", linkFor(pub));
+    }
+  }
   const revokeKeyMutation = useMutation({ mutationFn: revokePublisherApiKey, onSuccess: invalidate });
   const createMutation = useMutation({
     mutationFn: () =>
@@ -342,6 +355,35 @@ export default function PublisherTable() {
                             className="text-xs font-medium text-indigo-600 hover:text-indigo-800 disabled:opacity-40"
                           >
                             Save password
+                          </button>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">
+                          Public check link (no login needed)
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            readOnly
+                            value={linkFor(pub)}
+                            onFocus={(e) => e.target.select()}
+                            className="w-72 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs"
+                          />
+                          <button
+                            onClick={() => copyLink(pub)}
+                            className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                          >
+                            {copied === pub.id ? "Copied" : "Copy"}
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (window.confirm("Generate a new link? The old link stops working.")) {
+                                linkMutation.mutate(pub.id);
+                              }
+                            }}
+                            className="text-xs font-medium text-slate-500 hover:text-slate-700"
+                          >
+                            New link
                           </button>
                         </div>
                       </div>

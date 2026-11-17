@@ -1,4 +1,4 @@
-const { checkNumber } = require("../services/realtimeCheckService");
+const { checkAndRecord } = require("../services/realtimeCheckService");
 
 const MAX_BATCH = 500;
 const BATCH_CONCURRENCY = 20;
@@ -7,7 +7,7 @@ const BATCH_CONCURRENCY = 20;
 async function check(req, res) {
   const { phone, state } = req.body || {};
   if (!phone) return res.status(400).json({ error: "phone is required" });
-  res.json(await checkNumber(req.publisher, phone, state));
+  res.json(await checkAndRecord(req.publisher, phone, state, "api"));
 }
 
 // POST /api/v1/check-batch  { "phones": ["555...", { "phone": "555...", "state": "OH" }] }
@@ -29,7 +29,7 @@ async function checkBatch(req, res) {
         const item = phones[i];
         const phone = item && typeof item === "object" ? item.phone : item;
         const state = item && typeof item === "object" ? item.state : undefined;
-        results[i] = await checkNumber(req.publisher, phone, state);
+        results[i] = await checkAndRecord(req.publisher, phone, state, "api");
       }
     })
   );

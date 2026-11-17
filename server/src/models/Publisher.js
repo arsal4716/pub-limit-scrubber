@@ -63,6 +63,9 @@ const publisherSchema = new mongoose.Schema(
     // creation and never stored). Used by /api/v1 realtime scrubbing.
     apiKeyHash: { type: String, select: false, index: true, sparse: true },
     apiKeyPrefix: { type: String }, // first chars only, so admins can tell keys apart
+    // Secret token for this publisher's public single-number check page
+    // (/c/<token>). Random and unguessable, never derived from the name.
+    checkLinkToken: { type: String, unique: true, sparse: true, index: true },
     allowedIps: {
       type: [String],
       default: [],
@@ -77,9 +80,14 @@ function toSlug(name) {
 
 publisherSchema.statics.toSlug = toSlug;
 
+publisherSchema.statics.newCheckLinkToken = () => require("crypto").randomBytes(18).toString("base64url");
+
 publisherSchema.pre("validate", function preValidate(next) {
   if (this.name) {
     this.slug = toSlug(this.name);
+  }
+  if (!this.checkLinkToken) {
+    this.checkLinkToken = publisherSchema.statics.newCheckLinkToken();
   }
   next();
 });

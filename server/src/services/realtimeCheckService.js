@@ -2,6 +2,7 @@ const { normalizePhone, normalizeStateCode, deriveStateFromAreaCode } = require(
 const { checkPhonesForDnc } = require("./internalDncClient");
 const { reserveBuyerCall, getPublisherBuyerLimits } = require("./buyerLimitService");
 const { pingLM, pingHC } = require("./buyerApiClient");
+const LeadCheck = require("../models/LeadCheck");
 const { getOrCreateGlobalConfig, enabledBuyersFrom } = require("./limitService");
 
 // Realtime check of one number for a publisher. Order: internal DNC ->
@@ -10,6 +11,14 @@ const { getOrCreateGlobalConfig, enabledBuyersFrom } = require("./limitService")
 // the publisher's own daily limit (split 50/50), same as file scrubs.
 // Buyer names are never exposed - only buyer1/buyer2.
 async function checkNumber(publisher, rawPhone, rawState) {
+  const result = await runCheck(publisher, rawPhone, rawState);
+  if (result.status !== "invalid") {
+    result.state = (rawState && normalizeStateCode(rawState)) || deriveStateFromAreaCode(result.phone);
+  }
+  return result;
+}
+
+async function runCheck(publisher, rawPhone, rawState) {
   const phone = normalizePhone(rawPhone);
   if (!phone) {
     return { phone: rawPhone ?? null, status: "invalid", reason: "Not a valid US phone number" };
@@ -51,4 +60,30 @@ async function checkNumber(publisher, rawPhone, rawState) {
   return { phone, status: "available", reason: "Caller Allowed", checkedBy };
 }
 
-module.exports = { checkNumber };
+const DUPLICATE_STATUSES = new Set(["blocked", "dnc"]);
+
+// Runs a check and saves it to the lead_checks table with the publisher's
+// name. Invalid phones were never checked, so they aren't recorded.
+async function checkAndRecord(publisher, rawPhone, rawState, source) {
+  const result = await checkNumber(publisher, rawPhone, rawState);
+  if (result.status !== "invalid") {
+    try {
+      await LeadCheck.create({
+        phone: result.phone,
+        state: result.state || null,
+        publisherId: publisher._id,
+        publisherName: publisher.name,
+        status: result.status,
+        isDuplicate: DUPLICATE_STATUSES.has(result.status),
+        reason: result.reason || null,
+        buyerSlot: result.checkedBy && result.checkedBy.length ? result.checkedBy[result.checkedBy.length - 1] : null,
+        source,
+      });
+    } catch (err) {
+      console.error("[realtimeCheck] failed to save lead check:", err.message);
+    }
+  }
+  return result;
+}
+
+module.exports = { checkNumber, checkAndRecord, DUPLICATE_STATUSES };
