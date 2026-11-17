@@ -21,7 +21,7 @@ async function checkNumber(publisher, rawPhone, rawState) {
 async function runCheck(publisher, rawPhone, rawState) {
   const phone = normalizePhone(rawPhone);
   if (!phone) {
-    return { phone: rawPhone ?? null, status: "invalid", reason: "Not a valid US phone number" };
+    return { phone: null, status: "invalid", reason: "Not a valid US phone number" };
   }
 
   const dnc = (await checkPhonesForDnc([phone], 1)).get(phone);
