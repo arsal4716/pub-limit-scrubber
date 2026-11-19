@@ -80,6 +80,10 @@ module.exports = {
   // and network allow rather than at a fixed pace.
   fastModeConcurrency: toInt(process.env.FAST_MODE_CONCURRENCY, 200),
 
+  // How many scrub jobs may run at the same time. While several
+  // publishers scrub at once they share the admin rate limit equally.
+  maxConcurrentJobs: toInt(process.env.MAX_CONCURRENT_JOBS, 5),
+
   // Seed value for the global capacity ceiling (applied on first boot
   // only, then only editable from the admin dashboard).
   defaultTotalDailyLimit: toInt(process.env.DEFAULT_TOTAL_DAILY_LIMIT, 1000000),

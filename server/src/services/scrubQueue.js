@@ -6,6 +6,7 @@ const { processPhonesSplit, leadsPerMinuteRate } = require("./buyerApiClient");
 const { checkPhonesForDnc } = require("./internalDncClient");
 const { getPublisherBuyerLimits } = require("./buyerLimitService");
 const { getOrCreateGlobalConfig, enabledBuyersFrom } = require("./limitService");
+const env = require("../config/env");
 const LeadCheck = require("../models/LeadCheck");
 const { detectDelimiter } = require("../utils/csvDelimiter");
 
@@ -28,11 +29,14 @@ function applyResultToJob(job, result) {
   applyBuyerStat(job.buyerStats[result.slot], result.status);
 }
 
-// Single, sequential, in-process worker. Only one job runs at a time, which
-// automatically respects the buyer API's global rate limit (each job already
-// throttles itself internally) without needing a separate cross-job limiter.
+// In-process worker pool: up to env.maxConcurrentJobs jobs run at once
+// (extra jobs wait in `queue`). While jobs are calling the buyer APIs they
+// share the admin rate limit - see ratePerJob.
 const queue = [];
-let isRunning = false;
+const running = new Set();
+// jobId -> publisherId, only while that job is in its buyer-calling phase
+// (analysis / DNC checking don't use buyer capacity).
+const scrubbing = new Map();
 
 function pendingPhoneCountAhead() {
   // Best-effort estimate for wait-time messaging; queued jobs haven't been
@@ -40,34 +44,59 @@ function pendingPhoneCountAhead() {
   return queue.length;
 }
 
-function enqueueJob(jobId) {
-  queue.push(jobId);
-  runLoop();
+// Per-buyer rate for one job: the admin target is split equally between
+// the publishers scrubbing right now, and a publisher's own jobs split that
+// publisher's slice (2 publishers -> 2500/min each of 5000; 3 -> ~1667).
+// Never exposes who else is scrubbing - only the resulting number.
+function ratePerJob(jobId, baseRate) {
+  const publisherId = scrubbing.get(jobId);
+  if (!publisherId) return baseRate;
+  const publishers = new Set(scrubbing.values()).size;
+  let ownJobs = 0;
+  for (const p of scrubbing.values()) if (p === publisherId) ownJobs += 1;
+  return Math.max(1, baseRate / publishers / ownJobs);
 }
 
-async function runLoop() {
-  if (isRunning) return;
-  isRunning = true;
+// For status pages: this job's current per-buyer rate and whether the
+// capacity is being shared with another publisher (a flag, never a name).
+function getJobRateInfo(jobId, baseRate) {
+  const publisherId = scrubbing.get(String(jobId));
+  const sharedWithOthers = publisherId ? new Set(scrubbing.values()).size > 1 : false;
+  return { ratePerBuyer: ratePerJob(String(jobId), baseRate), sharedWithOthers };
+}
 
-  while (queue.length > 0) {
+function enqueueJob(jobId) {
+  queue.push(jobId);
+  pump();
+}
+
+function pump() {
+  while (running.size < env.maxConcurrentJobs && queue.length > 0) {
     const jobId = queue.shift();
-    try {
-      await runJob(jobId);
-    } catch (err) {
-      // Full detail goes to the server log for debugging; publishers only
-      // ever see a generic message - internal errors (DB, network, etc.)
-      // should never leak raw driver/library text to end users.
-      console.error(`[scrubQueue] job ${jobId} failed:`, err);
-      await ScrubJob.findByIdAndUpdate(jobId, {
-        status: "failed",
-        errorMessage: err.userFacing
-          ? err.message
-          : "An unexpected error occurred while processing this file. Please try again or contact an admin.",
-      });
-    }
+    running.add(jobId);
+    execute(jobId).finally(() => {
+      running.delete(jobId);
+      scrubbing.delete(jobId);
+      pump();
+    });
   }
+}
 
-  isRunning = false;
+async function execute(jobId) {
+  try {
+    await runJob(jobId);
+  } catch (err) {
+    // Full detail goes to the server log for debugging; publishers only
+    // ever see a generic message - internal errors (DB, network, etc.)
+    // should never leak raw driver/library text to end users.
+    console.error(`[scrubQueue] job ${jobId} failed:`, err);
+    await ScrubJob.findByIdAndUpdate(jobId, {
+      status: "failed",
+      errorMessage: err.userFacing
+        ? err.message
+        : "An unexpected error occurred while processing this file. Please try again or contact an admin.",
+    }).catch((e) => console.error("[scrubQueue] could not mark job failed:", e));
+  }
 }
 
 const FILE_STATUS = {
@@ -199,13 +228,17 @@ async function runJob(jobId) {
     // document would race on its version key).
     let saveChain = Promise.resolve();
 
+    // From here until the buyer calls finish, this job counts toward the
+    // rate-sharing split with other publishers' running jobs.
+    const jobKey = String(job._id);
+    scrubbing.set(jobKey, String(job.publisherId));
     await processPhonesSplit(
       phonesToProcess,
       analysis.phoneStates,
       job.publisherId,
       buyerLimits,
       rateLimitEnabled,
-      ratePerMinute,
+      () => ratePerJob(jobKey, ratePerMinute),
       (phone, result) => {
         phoneResults.set(phone, result);
         applyResultToJob(job, result);
@@ -223,6 +256,8 @@ async function runJob(jobId) {
       }
     );
   }
+
+  scrubbing.delete(String(job._id));
 
   const outputPath = path.join(path.dirname(job.inputPath), "output.csv");
   await writeOutputFile(job.inputPath, outputPath, { phoneResults, delimiter, phoneColumn: analysis.phoneColumn });
@@ -271,4 +306,4 @@ async function recoverInterruptedJobs() {
   }
 }
 
-module.exports = { enqueueJob, recoverInterruptedJobs, pendingPhoneCountAhead };
+module.exports = { getJobRateInfo, enqueueJob, recoverInterruptedJobs, pendingPhoneCountAhead };

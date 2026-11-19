@@ -134,6 +134,13 @@ export default function JobStatusCard({ jobId, admin = false }) {
         </div>
       )}
 
+      {job.status === "processing" && job.sharingCapacity && (
+        <p className="text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-3">
+          Scrubbing speed is currently shared with other active scrubs, so the time remaining may
+          change as they start and finish.
+        </p>
+      )}
+
       {job.status === "processing" && !admin && (
         <p className="text-sm text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg p-3">
           You can leave this tab — {hasEta ? `come back in ${etaText}` : "check back shortly"} and

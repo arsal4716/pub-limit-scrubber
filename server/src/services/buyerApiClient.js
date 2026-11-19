@@ -123,7 +123,13 @@ async function waitUntilOpen(onPauseChange) {
 async function processPhonesForBuyer(buyerKey, phones, phoneStates, publisherId, dailyLimit, rateLimitEnabled, ratePerMinute, onResult, onProgress, onPauseChange) {
   const slot = BUYER_SLOT[buyerKey];
   const batchSize = rateLimitEnabled ? env.buyerApiConcurrency : env.fastModeConcurrency;
-  const batchDelayMs = rateLimitEnabled ? (batchSize / ratePerMinute) * 60 * 1000 : 0;
+  // `ratePerMinute` may be a function so the pace can follow how many
+  // publishers are scrubbing right now (see scrubQueue.ratePerJob) - the
+  // delay is recomputed for every batch.
+  const currentDelayMs = () => {
+    const rate = typeof ratePerMinute === "function" ? ratePerMinute() : ratePerMinute;
+    return rateLimitEnabled ? (batchSize / rate) * 60 * 1000 : 0;
+  };
   let processed = 0;
 
   for (let i = 0; i < phones.length; i += batchSize) {
@@ -148,7 +154,7 @@ async function processPhonesForBuyer(buyerKey, phones, phoneStates, publisherId,
     if (batchResults.some((r) => r.rateLimited)) {
       await sleep(rateLimitBackoffMs());
     } else if (rateLimitEnabled) {
-      await sleep(batchDelayMs);
+      await sleep(currentDelayMs());
     }
   }
 }
