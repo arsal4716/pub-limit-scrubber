@@ -37,12 +37,16 @@ async function updateBuyerToggles({ lmEnabled, hcEnabled } = {}) {
   return GlobalConfig.findOneAndUpdate({ key: "global" }, update, { upsert: true, new: true });
 }
 
-async function updatePortalEnabled(portalEnabled) {
-  return GlobalConfig.findOneAndUpdate({ key: "global" }, { portalEnabled }, { upsert: true, new: true });
+async function updatePortalMode(portalMode) {
+  return GlobalConfig.findOneAndUpdate(
+    { key: "global" },
+    { portalMode, portalEnabled: portalMode !== "off" },
+    { upsert: true, new: true }
+  );
 }
 
 function enabledBuyersFrom(config) {
   return { LM: !!config.lmEnabled, HC: !!config.hcEnabled };
 }
 
-module.exports = { updatePortalEnabled, updateBuyerToggles, enabledBuyersFrom, getOrCreateGlobalConfig, updateGlobalDailyLimit, updateRateLimitSettings };
+module.exports = { updatePortalMode, updateBuyerToggles, enabledBuyersFrom, getOrCreateGlobalConfig, updateGlobalDailyLimit, updateRateLimitSettings };

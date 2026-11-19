@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const ScrubJob = require("../models/ScrubJob");
-const { enqueueJob, pendingPhoneCountAhead } = require("../services/scrubQueue");
+const { enqueueJob, pendingPhoneCountAhead, getJobRateInfo } = require("../services/scrubQueue");
 const { leadsPerMinuteRate } = require("../services/buyerApiClient");
 const { getPublisherUsageSnapshot } = require("../services/buyerLimitService");
 const { getPortalStatus } = require("../services/operatingHours");
@@ -92,6 +92,13 @@ async function getStatus(req, res) {
   const job = await ScrubJob.findById(req.params.jobId);
   if (!job || !isOwnJob(req, job)) return res.status(404).json({ error: "Job not found" });
   const dto = jobToStatusDto(job);
+  if (job.status === "processing" && job.rateLimitEnabled) {
+    // Live pace for this job: the admin target split between publishers
+    // scrubbing right now. Only a flag says capacity is shared - never who.
+    const info = getJobRateInfo(job._id, job.rateLimitPerMinute);
+    dto.leadsPerMinuteRate = Math.round(info.ratePerBuyer * (job.activeBuyerCount || 2));
+    dto.sharingCapacity = info.sharedWithOthers;
+  }
   if (job.paused) {
     const status = await getPortalStatus();
     dto.paused = true;

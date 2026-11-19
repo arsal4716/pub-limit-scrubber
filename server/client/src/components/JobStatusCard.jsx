@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchJobStatus, downloadScrubOutput } from "../api/scrub";
 import StatusBadge from "./StatusBadge.jsx";
@@ -134,6 +134,13 @@ export default function JobStatusCard({ jobId, admin = false }) {
         </div>
       )}
 
+      {job.status === "processing" && job.sharingCapacity && (
+        <p className="text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-3">
+          Scrubbing speed is currently shared with other active scrubs, so the time remaining may
+          change as they start and finish.
+        </p>
+      )}
+
       {job.status === "processing" && !admin && (
         <p className="text-sm text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg p-3">
           You can leave this tab — {hasEta ? `come back in ${etaText}` : "check back shortly"} and
@@ -155,10 +162,14 @@ export default function JobStatusCard({ jobId, admin = false }) {
             <Stat label="Blank phone" value={job.blankPhoneCount} />
             <Stat label="Invalid phone format" value={job.invalidPhoneCount} />
             <Stat label="Dupes in file" value={job.duplicateInFileCount} />
-            <Stat label="Buyer 1 blocked" value={job.buyerStats?.buyer1?.blockedCount} />
-            <Stat label="Buyer 2 blocked" value={job.buyerStats?.buyer2?.blockedCount} />
-            <Stat label="Buyer 1 errors" value={job.buyerStats?.buyer1?.errorCount} />
-            <Stat label="Buyer 2 errors" value={job.buyerStats?.buyer2?.errorCount} />
+            {[["buyer1", "Buyer 1"], ["buyer2", "Buyer 2"]].map(([key, label]) =>
+              buyerUsed(job.buyerStats?.[key]) ? (
+                <Fragment key={key}>
+                  <Stat label={`${label} blocked`} value={job.buyerStats[key].blockedCount} />
+                  <Stat label={`${label} errors`} value={job.buyerStats[key].errorCount} />
+                </Fragment>
+              ) : null
+            )}
           </div>
           <button
             type="button"
@@ -172,6 +183,11 @@ export default function JobStatusCard({ jobId, admin = false }) {
       )}
     </div>
   );
+}
+
+// A buyer that was switched off for this job has all-zero counters - hide it.
+function buyerUsed(stats) {
+  return !!stats && stats.blockedCount + stats.availableCount + stats.errorCount + stats.notCheckedCount > 0;
 }
 
 function Stat({ label, value }) {

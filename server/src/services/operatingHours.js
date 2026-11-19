@@ -35,11 +35,16 @@ function formatOpenTime(date) {
   });
 }
 
+function getPortalMode(config) {
+  return config.portalMode || (config.portalEnabled === false ? "off" : "hours");
+}
+
 // What publishers should see right now. `open` is true only when the admin
 // master switch is ON and we're inside operating hours.
 async function getPortalStatus(now = new Date()) {
   const config = await getOrCreateGlobalConfig();
-  if (!config.portalEnabled) {
+  const mode = getPortalMode(config);
+  if (mode === "off") {
     return {
       open: false,
       reason: "off",
@@ -48,7 +53,7 @@ async function getPortalStatus(now = new Date()) {
       nextOpenAt: null,
     };
   }
-  if (!isWithinHours(now)) {
+  if (mode === "hours" && !isWithinHours(now)) {
     const next = nextOpenAt(now);
     return {
       open: false,
@@ -63,4 +68,4 @@ async function getPortalStatus(now = new Date()) {
   return { open: true, reason: null, message: null, hours: HOURS_TEXT, nextOpenAt: null };
 }
 
-module.exports = { getPortalStatus, isWithinHours, nextOpenAt, HOURS_TEXT };
+module.exports = { getPortalMode, getPortalStatus, isWithinHours, nextOpenAt, HOURS_TEXT };

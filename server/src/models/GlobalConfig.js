@@ -23,6 +23,11 @@ const globalConfigSchema = new mongoose.Schema(
     // publishers: no new uploads or API checks, and running jobs pause
     // their buyer calls until it's turned back on.
     portalEnabled: { type: Boolean, default: true },
+    // "always" = works any time, "hours" = only within operating hours,
+    // "off" = shown as temporarily down. No schema default on purpose: when
+    // unset, the mode is derived from the legacy portalEnabled flag (see
+    // services/operatingHours.getPortalMode).
+    portalMode: { type: String, enum: ["always", "hours", "off"] },
     lmEnabled: { type: Boolean, default: false },
     hcEnabled: { type: Boolean, default: true },
     rateLimitPerMinute: { type: Number, default: 1000, min: 1 },
