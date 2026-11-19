@@ -15,9 +15,9 @@ function sleep(ms) {
 // One request, retried (with a short backoff) on timeouts/errors before
 // giving up, so a briefly overloaded DNC service doesn't let numbers slip
 // through to the buyers.
-async function checkOne(phone) {
+async function checkOne(phone, attempts = MAX_ATTEMPTS) {
   let lastError = null;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
       const response = await axios.post(
         env.internalDncApiUrl,
@@ -31,7 +31,7 @@ async function checkOne(phone) {
       return { isDuplicate: status !== "Not Duplicate", message: status };
     } catch (err) {
       lastError = err.message;
-      if (attempt < MAX_ATTEMPTS) await sleep(500 * attempt);
+      if (attempt < attempts) await sleep(500 * attempt);
     }
   }
   // Fail open after all retries: if our own dedupe service is unreachable,
@@ -41,44 +41,78 @@ async function checkOne(phone) {
 
 // Runs every phone through our own duplicate/DNC check before either buyer
 // ever sees it. This is our own service, not a third-party API with a
-// quota, so there's no pacing/delay between batches - `concurrency` only
-// caps how many requests are in flight at once. Returns a Map of
-// normalizedPhone -> { isDuplicate, message }.
+// quota, so there is NO rate limit and no pacing: a sliding pool keeps
+// `concurrency` requests in flight at all times (a new one starts the
+// instant any finishes, with no waiting for a batch's slowest request), so
+// the pass runs as fast as the service answers. The admin buyer rate limit,
+// rate sharing between publishers and operating-hours pauses never apply
+// here. Returns a Map of normalizedPhone -> { isDuplicate, message }.
 //
-// `onProgress(checkedSoFar, duplicatesSoFar)` fires after each batch. If the service is
-// down, every request waits out its timeout, which on a big file would
-// stall the job for hours - so after MAX_FAILED_BATCHES consecutive
-// batches where every request failed, the DNC pass is abandoned (fail
-// open) and the remaining phones go straight to the buyers.
-const MAX_FAILED_BATCHES = 3;
+// `onProgress(checkedSoFar, duplicatesSoFar)` fires about every
+// PROGRESS_EVERY checks (not awaited by the workers, so saving progress
+// never slows the checks). If the service is down, every request waits out
+// its timeout, which on a big file would stall the job for hours - so after
+// MAX_CONSECUTIVE_FAILURES checks in a row fail, the DNC pass is abandoned
+// (fail open) and the remaining phones go straight to the buyers.
+const PROGRESS_EVERY = 500;
+const MAX_CONSECUTIVE_FAILURES = 60;
 
-async function checkPhonesForDnc(phones, concurrency = env.internalDncConcurrency, onProgress) {
+async function checkPhonesForDnc(phones, concurrency = env.internalDncConcurrency, onProgress, attempts = MAX_ATTEMPTS) {
   const results = new Map();
-  let failedBatches = 0;
+  let next = 0;
+  let checked = 0;
   let duplicates = 0;
+  let consecutiveFailures = 0;
+  let failedSinceLog = 0;
+  let lastError = null;
+  let abandoned = false;
+  let lastReported = 0;
+  let progressChain = Promise.resolve();
 
-  for (let i = 0; i < phones.length; i += concurrency) {
-    const batch = phones.slice(i, i + concurrency);
-    const batchResults = await Promise.all(batch.map(checkOne));
-    batch.forEach((phone, idx) => results.set(phone, batchResults[idx]));
-    duplicates += batchResults.filter((r) => r.isDuplicate).length;
-    const failedInBatch = batchResults.filter((r) => r.failed);
-    if (failedInBatch.length > 0) {
-      // One line per batch instead of one per number.
-      console.error(
-        `[internalDncClient] ${failedInBatch.length}/${batch.length} checks failed after ${MAX_ATTEMPTS} attempts (${failedInBatch[0].error})`
-      );
-    }
-    if (onProgress) await onProgress(Math.min(i + concurrency, phones.length), duplicates);
+  const report = () => {
+    if (!onProgress) return;
+    lastReported = checked;
+    const snapshot = [checked, duplicates];
+    progressChain = progressChain.then(() => onProgress(...snapshot)).catch(() => {});
+  };
 
-    failedBatches = batchResults.every((r) => r.failed) ? failedBatches + 1 : 0;
-    if (failedBatches >= MAX_FAILED_BATCHES) {
-      console.error("[internalDncClient] service unreachable; skipping internal DNC check for the rest of the file");
-      if (onProgress) await onProgress(phones.length, duplicates);
-      break;
+  const worker = async () => {
+    while (!abandoned && next < phones.length) {
+      const phone = phones[next++];
+      const result = await checkOne(phone, attempts);
+      results.set(phone, result);
+      checked += 1;
+      if (result.isDuplicate) duplicates += 1;
+
+      if (result.failed) {
+        consecutiveFailures += 1;
+        failedSinceLog += 1;
+        lastError = result.error;
+        if (failedSinceLog >= 100) {
+          console.error(`[internalDncClient] ${failedSinceLog} checks failed after ${attempts} attempts (${lastError})`);
+          failedSinceLog = 0;
+        }
+        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) abandoned = true;
+      } else {
+        consecutiveFailures = 0;
+      }
+
+      if (checked - lastReported >= PROGRESS_EVERY) report();
     }
+  };
+
+  const workerCount = Math.max(1, Math.min(concurrency, phones.length));
+  await Promise.all(Array.from({ length: workerCount }, worker));
+
+  if (failedSinceLog > 0) {
+    console.error(`[internalDncClient] ${failedSinceLog} checks failed after ${attempts} attempts (${lastError})`);
   }
-
+  if (abandoned) {
+    console.error("[internalDncClient] service unreachable; skipping internal DNC check for the rest of the file");
+  }
+  checked = phones.length; // phones skipped after abandoning count as passed through
+  report();
+  await progressChain;
   return results;
 }
 

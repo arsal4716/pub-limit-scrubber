@@ -24,7 +24,7 @@ async function runCheck(publisher, rawPhone, rawState) {
     return { phone: null, status: "invalid", reason: "Not a valid US phone number" };
   }
 
-  const dnc = (await checkPhonesForDnc([phone], 1)).get(phone);
+  const dnc = (await checkPhonesForDnc([phone], 1, undefined, 2)).get(phone);
   if (dnc && dnc.isDuplicate) {
     return { phone, status: "dnc", reason: "Duplicate - internal DNC list", checkedBy: [] };
   }
